@@ -608,14 +608,84 @@ public class MirrorService : IMirrorService
     /// </summary>
     private async Task CreateJellyfinLibraryAsync(LanguageAlternative alternative, LibraryMirror mirror, CancellationToken cancellationToken)
     {
+        // Get source library options to copy settings from
+        var sourceLibrary = GetVirtualFolderById(mirror.SourceLibraryId);
+        var sourceOptions = sourceLibrary?.LibraryOptions;
+
         var options = new MediaBrowser.Model.Configuration.LibraryOptions
         {
+            // Language settings - set from the alternative (the whole point of mirrors!)
             PreferredMetadataLanguage = alternative.MetadataLanguage,
             MetadataCountryCode = alternative.MetadataCountry,
-            EnablePhotos = false,
+
+            // MUST be false for mirrors - hardlinked files share the same physical location,
+            // so saving metadata/subtitles next to files would cause conflicts between libraries
+            SaveLocalMetadata = false,
+            SaveSubtitlesWithMedia = false,
+            SaveLyricsWithMedia = false,
+
+            // Enable monitoring for changes
             EnableRealtimeMonitor = true,
-            SaveLocalMetadata = false
+            Enabled = true
         };
+
+        // Copy settings from source library if available
+        if (sourceOptions != null)
+        {
+            // TypeOptions - critical! Contains metadata fetchers, image fetchers, their order
+            options.TypeOptions = sourceOptions.TypeOptions;
+
+            // Metadata handling
+            options.MetadataSavers = sourceOptions.MetadataSavers;
+            options.DisabledLocalMetadataReaders = sourceOptions.DisabledLocalMetadataReaders;
+            options.LocalMetadataReaderOrder = sourceOptions.LocalMetadataReaderOrder;
+
+            // Subtitle settings
+            options.DisabledSubtitleFetchers = sourceOptions.DisabledSubtitleFetchers;
+            options.SubtitleFetcherOrder = sourceOptions.SubtitleFetcherOrder;
+            options.SubtitleDownloadLanguages = sourceOptions.SubtitleDownloadLanguages;
+            options.SkipSubtitlesIfEmbeddedSubtitlesPresent = sourceOptions.SkipSubtitlesIfEmbeddedSubtitlesPresent;
+            options.SkipSubtitlesIfAudioTrackMatches = sourceOptions.SkipSubtitlesIfAudioTrackMatches;
+            options.RequirePerfectSubtitleMatch = sourceOptions.RequirePerfectSubtitleMatch;
+            options.AllowEmbeddedSubtitles = sourceOptions.AllowEmbeddedSubtitles;
+
+            // Lyric settings (music)
+            options.DisabledLyricFetchers = sourceOptions.DisabledLyricFetchers;
+            options.LyricFetcherOrder = sourceOptions.LyricFetcherOrder;
+
+            // Media segment providers (intro/credits detection)
+            options.DisabledMediaSegmentProviders = sourceOptions.DisabledMediaSegmentProviders;
+            options.MediaSegmentProvideOrder = sourceOptions.MediaSegmentProvideOrder;
+
+            // Image/chapter extraction
+            options.EnablePhotos = sourceOptions.EnablePhotos;
+            options.EnableChapterImageExtraction = sourceOptions.EnableChapterImageExtraction;
+            options.ExtractChapterImagesDuringLibraryScan = sourceOptions.ExtractChapterImagesDuringLibraryScan;
+            options.EnableTrickplayImageExtraction = sourceOptions.EnableTrickplayImageExtraction;
+            options.ExtractTrickplayImagesDuringLibraryScan = sourceOptions.ExtractTrickplayImagesDuringLibraryScan;
+            options.SaveTrickplayWithMedia = sourceOptions.SaveTrickplayWithMedia;
+
+            // Organization settings
+            options.AutomaticallyAddToCollection = sourceOptions.AutomaticallyAddToCollection;
+            options.EnableAutomaticSeriesGrouping = sourceOptions.EnableAutomaticSeriesGrouping;
+            options.SeasonZeroDisplayName = sourceOptions.SeasonZeroDisplayName;
+
+            // Embedded info
+            options.EnableEmbeddedTitles = sourceOptions.EnableEmbeddedTitles;
+            options.EnableEmbeddedExtrasTitles = sourceOptions.EnableEmbeddedExtrasTitles;
+            options.EnableEmbeddedEpisodeInfos = sourceOptions.EnableEmbeddedEpisodeInfos;
+
+            // Music tag parsing
+            options.PreferNonstandardArtistsTag = sourceOptions.PreferNonstandardArtistsTag;
+            options.UseCustomTagDelimiters = sourceOptions.UseCustomTagDelimiters;
+            options.CustomTagDelimiters = sourceOptions.CustomTagDelimiters;
+            options.DelimiterWhitelist = sourceOptions.DelimiterWhitelist;
+
+            // Refresh settings
+            options.AutomaticRefreshIntervalDays = sourceOptions.AutomaticRefreshIntervalDays;
+            options.EnableLUFSScan = sourceOptions.EnableLUFSScan;
+            options.EnableInternetProviders = true; // Always enable - mirrors need to fetch metadata
+        }
 
         // Parse collection type from string to enum
         MediaBrowser.Model.Entities.CollectionTypeOptions? collectionType = null;

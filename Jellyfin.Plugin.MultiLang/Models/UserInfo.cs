@@ -23,6 +23,11 @@ public class UserInfo
     public bool IsAdministrator { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the plugin manages this user's library access.
+    /// </summary>
+    public bool IsPluginManaged { get; set; }
+
+    /// <summary>
     /// Gets or sets the assigned language alternative ID.
     /// </summary>
     public Guid? AssignedAlternativeId { get; set; }

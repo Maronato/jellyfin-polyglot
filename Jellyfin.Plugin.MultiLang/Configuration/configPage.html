@@ -121,14 +121,30 @@
                                 <label class="inputLabel inputLabelUnfocused" for="mirrorSyncInterval">Mirror Sync Interval (hours)</label>
                                 <input id="mirrorSyncInterval" type="number" is="emby-input" min="1" value="6" />
                                 <div class="fieldDescription">How often to sync mirror libraries with source libraries.</div>
-                    </div>
-                </div>
+                            </div>
+                        </div>
+
+                        <div class="verticalSection">
+                            <h3 class="sectionTitle">User Management</h3>
+                            <p class="fieldDescription" style="margin-bottom: 1em;">
+                                Many users have "Enable access to all libraries" in their Jellyfin profile, which prevents
+                                the plugin from managing their library access. Use the button below to enable plugin management
+                                for all users at once. This will set each user to "Default libraries" (they see only source
+                                libraries, not language-specific mirrors).
+                            </p>
+                            <button is="emby-button" type="button" class="raised" id="btnEnableAllUsers">
+                                <span>Enable Plugin for All Users</span>
+                            </button>
+                            <div class="fieldDescription" style="margin-top: 0.5em;">
+                                This will set EnableAllFolders=false for each user and configure their library access based on language settings.
+                            </div>
+                        </div>
 
                         <div>
                             <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                                 <span>Save Settings</span>
                             </button>
-                </div>
+                        </div>
                     </form>
                 </div>
 
@@ -486,6 +502,7 @@
                         self.users = jellyfinUsers.map(function(user) {
                             var langConfig = userLanguages[user.Id];
                             var altName = null;
+                            var isManaged = langConfig ? langConfig.IsPluginManaged : false;
                             if (langConfig && langConfig.SelectedAlternativeId) {
                                 var alt = self.alternatives.find(function(a) { return a.Id === langConfig.SelectedAlternativeId; });
                                 if (alt) altName = alt.Name;
@@ -494,6 +511,7 @@
                                 Id: user.Id,
                                 Username: user.Name,
                                 IsAdministrator: user.Policy && user.Policy.IsAdministrator,
+                                IsPluginManaged: isManaged,
                                 AssignedAlternativeId: langConfig ? langConfig.SelectedAlternativeId : null,
                                 AssignedAlternativeName: altName,
                                 ManuallySet: langConfig ? langConfig.ManuallySet : false
@@ -502,15 +520,29 @@
                         
                         var html = '';
                         self.users.forEach(function(user) {
+                            // Determine status text
+                            var statusText = 'Not managed by plugin';
+                            if (user.IsPluginManaged) {
+                                statusText = user.AssignedAlternativeName || 'Default libraries';
+                                if (user.ManuallySet) statusText += ' (manual)';
+                            }
+                            
+                            // Determine current selection value
+                            var currentValue = 'disabled';
+                            if (user.IsPluginManaged) {
+                                currentValue = user.AssignedAlternativeId || 'default';
+                            }
+                            
                             html += '<div class="listItem">';
                             html += '<div class="listItemBody" style="flex: 1;">';
                             html += '<div class="listItemBodyText">' + user.Username + (user.IsAdministrator ? ' (Admin)' : '') + '</div>';
-                            html += '<div class="listItemBodyText secondary">' + (user.AssignedAlternativeName || 'No language assigned') + (user.ManuallySet ? ' (manual)' : '') + '</div>';
+                            html += '<div class="listItemBodyText secondary">' + statusText + '</div>';
                             html += '</div>';
                             html += '<select is="emby-select" onchange="MultiLangConfig.setUserLanguage(\'' + user.Id + '\', this.value)" style="width: auto;">';
-                            html += '<option value="">-- None --</option>';
+                            html += '<option value="disabled"' + (currentValue === 'disabled' ? ' selected' : '') + '>Not managed</option>';
+                            html += '<option value="default"' + (currentValue === 'default' ? ' selected' : '') + '>Default libraries</option>';
                             self.alternatives.forEach(function(alt) {
-                                html += '<option value="' + alt.Id + '"' + (user.AssignedAlternativeId === alt.Id ? ' selected' : '') + '>' + alt.Name + '</option>';
+                                html += '<option value="' + alt.Id + '"' + (currentValue === alt.Id ? ' selected' : '') + '>' + alt.Name + '</option>';
                             });
                             html += '</select>';
                             html += '</div>';
@@ -704,13 +736,28 @@
                     });
                 },
 
-                setUserLanguage: function(userId, altId) {
+                setUserLanguage: function(userId, value) {
                     var self = this;
                     Dashboard.showLoadingMsg();
-                    this.apiPut('MultiLang/Users/' + userId + '/Language', {
-                        AlternativeId: altId || null,
+                    
+                    var requestData = {
                         ManuallySet: true
-                    }).then(function() {
+                    };
+                    
+                    if (value === 'disabled') {
+                        // User is not managed by plugin
+                        requestData.IsDisabled = true;
+                    } else if (value === 'default') {
+                        // Managed, but no specific language (default libraries)
+                        requestData.AlternativeId = null;
+                        requestData.IsDisabled = false;
+                    } else {
+                        // Managed with a specific language
+                        requestData.AlternativeId = value;
+                        requestData.IsDisabled = false;
+                    }
+                    
+                    this.apiPut('MultiLang/Users/' + userId + '/Language', requestData).then(function() {
                         self.loadUsers();
                         Dashboard.hideLoadingMsg();
                     }).catch(function(e) {
@@ -768,6 +815,28 @@
                         Dashboard.hideLoadingMsg();
                         Dashboard.alert('LDAP test failed: ' + e.message);
                     });
+                },
+
+                enableAllUsers: function() {
+                    var self = this;
+                    Dashboard.confirm(
+                        'This will enable plugin management for ALL users, setting them to "Default libraries". ' +
+                        'Each user\'s EnableAllFolders will be set to false. Continue?',
+                        'Enable Plugin for All Users',
+                        function(result) {
+                            if (result) {
+                                Dashboard.showLoadingMsg();
+                                self.apiPost('MultiLang/Users/EnableAll', {}).then(function(response) {
+                                    Dashboard.hideLoadingMsg();
+                                    Dashboard.alert('Enabled plugin for ' + response.UsersEnabled + ' users.');
+                                    self.loadUsers();
+                                }).catch(function(e) {
+                                    Dashboard.hideLoadingMsg();
+                                    Dashboard.alert('Failed to enable users: ' + e.message);
+                                });
+                            }
+                        }
+                    );
                 },
 
                 saveSettings: function() {
@@ -876,6 +945,11 @@
                             select.innerHTML += '<option value="' + alt.Id + '">' + alt.Name + '</option>';
                         });
                         self.showDialog('addLdapMappingDialog');
+                    });
+
+                    // Enable all users button
+                    document.getElementById('btnEnableAllUsers').addEventListener('click', function() {
+                        self.enableAllUsers();
                     });
 
                     // Test LDAP button

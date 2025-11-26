@@ -32,7 +32,7 @@ public class UserLanguageService : IUserLanguageService
     }
 
     /// <inheritdoc />
-    public async Task AssignLanguageAsync(Guid userId, Guid? alternativeId, string setBy, bool manuallySet = false, CancellationToken cancellationToken = default)
+    public async Task AssignLanguageAsync(Guid userId, Guid? alternativeId, string setBy, bool manuallySet = false, bool isPluginManaged = true, CancellationToken cancellationToken = default)
     {
         var config = Plugin.Instance?.Configuration;
         if (config == null)
@@ -71,6 +71,7 @@ public class UserLanguageService : IUserLanguageService
 
         userConfig.SelectedAlternativeId = alternativeId;
         userConfig.ManuallySet = manuallySet;
+        userConfig.IsPluginManaged = isPluginManaged;
         userConfig.SetAt = DateTime.UtcNow;
         userConfig.SetBy = setBy;
         userConfig.Username = user.Username;
@@ -78,20 +79,24 @@ public class UserLanguageService : IUserLanguageService
         SaveConfiguration();
 
         _logger.LogInformation(
-            "Assigned language {AlternativeName} to user {Username} (by: {SetBy}, manual: {ManuallySet})",
-            alternative?.Name ?? "None",
+            "Assigned language {AlternativeName} to user {Username} (by: {SetBy}, manual: {ManuallySet}, managed: {Managed})",
+            alternative?.Name ?? "Default",
             user.Username,
             setBy,
-            manuallySet);
+            manuallySet,
+            isPluginManaged);
 
-        // Update user's library access
-        await _libraryAccessService.UpdateUserLibraryAccessAsync(userId, cancellationToken).ConfigureAwait(false);
-
-        // Optionally sync user language preferences
-        if (alternative != null && !string.IsNullOrEmpty(alternative.LanguageCode))
+        // Update user's library access (only if managed)
+        if (isPluginManaged)
         {
-            await _libraryAccessService.SyncUserLanguagePreferencesAsync(userId, alternative.LanguageCode, cancellationToken)
-                .ConfigureAwait(false);
+            await _libraryAccessService.UpdateUserLibraryAccessAsync(userId, cancellationToken).ConfigureAwait(false);
+
+            // Optionally sync user language preferences
+            if (alternative != null && !string.IsNullOrEmpty(alternative.LanguageCode))
+            {
+                await _libraryAccessService.SyncUserLanguagePreferencesAsync(userId, alternative.LanguageCode, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
     }
 
@@ -169,6 +174,7 @@ public class UserLanguageService : IUserLanguageService
                 var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == user.Id);
                 if (userConfig != null)
                 {
+                    userInfo.IsPluginManaged = userConfig.IsPluginManaged;
                     userInfo.AssignedAlternativeId = userConfig.SelectedAlternativeId;
                     userInfo.ManuallySet = userConfig.ManuallySet;
                     userInfo.SetBy = userConfig.SetBy;

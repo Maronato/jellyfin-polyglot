@@ -48,43 +48,70 @@ public class LibraryAccessService : ILibraryAccessService
             return;
         }
 
-        // Get expected library access
-        var expectedLibraries = GetExpectedLibraryAccess(userId).ToList();
-
-        if (expectedLibraries.Count == 0)
+        // Check if user is managed by the plugin
+        var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
+        if (userConfig == null || !userConfig.IsPluginManaged)
         {
-            // No language assigned - give access to all non-mirror libraries
-            var nonMirrorLibraries = GetNonMirrorLibraries().ToList();
-            if (nonMirrorLibraries.Count == 0)
+            _logger.LogDebug("User {Username} is not managed by plugin, skipping library access update", user.Username);
+            return;
+        }
+
+        // Get libraries that are managed by the plugin (sources + mirrors)
+        var managedLibraries = GetManagedLibraryIds();
+
+        // Get user's current library access (before we modify it)
+        var currentAccess = GetCurrentLibraryAccess(user);
+
+        // Get the libraries the plugin determines the user should see (only managed libraries)
+        var expectedManagedLibraries = GetExpectedLibraryAccess(userId).ToHashSet();
+
+        // Build final library list:
+        // 1. For MANAGED libraries: use plugin's decision
+        // 2. For UNMANAGED libraries: preserve user's current access
+        var finalLibraries = new HashSet<Guid>();
+
+        // Add managed libraries that the user should see
+        foreach (var libId in expectedManagedLibraries)
+        {
+            finalLibraries.Add(libId);
+        }
+
+        // Preserve access to unmanaged libraries (like "Home Videos")
+        foreach (var libId in currentAccess)
+        {
+            if (!managedLibraries.Contains(libId))
             {
-                // No libraries configured, give full access
-                user.SetPermission(PermissionKind.EnableAllFolders, true);
-                _logger.LogInformation("User {Username} set to access all folders (no mirrors configured)", user.Username);
+                // This library is not managed by the plugin - preserve access
+                finalLibraries.Add(libId);
             }
-            else
+        }
+
+        // If no managed libraries exist yet, also preserve access to source libraries
+        // (This handles the case where plugin is enabled but no mirrors are configured yet)
+        if (managedLibraries.Count == 0)
+        {
+            foreach (var libId in currentAccess)
             {
-                user.SetPermission(PermissionKind.EnableAllFolders, false);
-                var libraryIds = nonMirrorLibraries.Select(g => g.ToString("N")).ToArray();
-                user.SetPreference(PreferenceKind.EnabledFolders, libraryIds);
-                _logger.LogInformation(
-                    "User {Username} set to access {Count} non-mirror libraries (no language assigned)",
-                    user.Username,
-                    nonMirrorLibraries.Count);
+                finalLibraries.Add(libId);
             }
+            _logger.LogInformation(
+                "User {Username} - no mirrors configured yet, preserving current access to {Count} libraries",
+                user.Username,
+                finalLibraries.Count);
         }
         else
         {
-            // Set specific library access
-            user.SetPermission(PermissionKind.EnableAllFolders, false);
-
-            var libraryIds = expectedLibraries.Select(g => g.ToString("N")).ToArray();
-            user.SetPreference(PreferenceKind.EnabledFolders, libraryIds);
-
             _logger.LogInformation(
-                "User {Username} library access updated to {Count} libraries",
+                "User {Username} library access updated: {ManagedCount} managed libraries, {UnmanagedCount} unmanaged preserved",
                 user.Username,
-                expectedLibraries.Count);
+                expectedManagedLibraries.Count,
+                finalLibraries.Count - expectedManagedLibraries.Count);
         }
+
+        // Apply the access
+        user.SetPermission(PermissionKind.EnableAllFolders, false);
+        var libraryIds = finalLibraries.Select(g => g.ToString("N")).ToArray();
+        user.SetPreference(PreferenceKind.EnabledFolders, libraryIds);
 
         await _userManager.UpdateUserAsync(user).ConfigureAwait(false);
     }
@@ -104,9 +131,9 @@ public class LibraryAccessService : ILibraryAccessService
             return false;
         }
 
-        // Check if user has a language assigned
+        // Check if user is managed by the plugin
         var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
-        if (userConfig == null || !userConfig.SelectedAlternativeId.HasValue)
+        if (userConfig == null || !userConfig.IsPluginManaged)
         {
             return false;
         }
@@ -115,17 +142,21 @@ public class LibraryAccessService : ILibraryAccessService
         var expectedLibraries = GetExpectedLibraryAccess(userId).ToHashSet();
         var currentLibraries = GetCurrentLibraryAccess(user);
 
+        // Also check if EnableAllFolders needs to be disabled
+        var hasEnableAllFolders = user.HasPermission(PermissionKind.EnableAllFolders);
+
         // Check if reconciliation is needed
-        if (expectedLibraries.SetEquals(currentLibraries))
+        if (!hasEnableAllFolders && expectedLibraries.SetEquals(currentLibraries))
         {
             return false;
         }
 
         _logger.LogInformation(
-            "Reconciling user {Username} library access: expected {Expected}, current {Current}",
+            "Reconciling user {Username} library access: expected {Expected}, current {Current}, EnableAllFolders={EnableAll}",
             user.Username,
             expectedLibraries.Count,
-            currentLibraries.Count);
+            currentLibraries.Count,
+            hasEnableAllFolders);
 
         await UpdateUserLibraryAccessAsync(userId, cancellationToken).ConfigureAwait(false);
         return true;
@@ -173,61 +204,115 @@ public class LibraryAccessService : ILibraryAccessService
 
         // Check if user has a language assigned
         var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
-        if (userConfig == null || !userConfig.SelectedAlternativeId.HasValue)
-        {
-            yield break;
-        }
 
-        // Find the language alternative
-        var alternative = config.LanguageAlternatives.FirstOrDefault(a => a.Id == userConfig.SelectedAlternativeId.Value);
-        if (alternative == null)
-        {
-            yield break;
-        }
-
-        // Get all source library IDs that are mirrored
-        var mirroredSourceIds = alternative.MirroredLibraries
-            .Where(m => m.TargetLibraryId.HasValue)
-            .Select(m => m.SourceLibraryId)
-            .ToHashSet();
+        // Get all libraries that are part of the multi-lang system
+        var managedLibraries = GetManagedLibraryIds();
 
         // Get all Jellyfin libraries
         var allLibraries = _libraryManager.GetVirtualFolders();
 
+        // Determine which alternative the user is assigned to (if any)
+        LanguageAlternative? alternative = null;
+        if (userConfig?.SelectedAlternativeId.HasValue == true)
+        {
+            alternative = config.LanguageAlternatives.FirstOrDefault(a => a.Id == userConfig.SelectedAlternativeId.Value);
+        }
+
+        // Get mirrors for the user's language (or empty if default/no language)
+        var userMirrorIds = alternative?.MirroredLibraries
+            .Where(m => m.TargetLibraryId.HasValue)
+            .Select(m => m.TargetLibraryId!.Value)
+            .ToHashSet() ?? new HashSet<Guid>();
+
+        // Get source libraries that have mirrors for the user's language
+        var userMirroredSourceIds = alternative?.MirroredLibraries
+            .Where(m => m.TargetLibraryId.HasValue)
+            .Select(m => m.SourceLibraryId)
+            .ToHashSet() ?? new HashSet<Guid>();
+
+        // Get ALL mirror IDs across all alternatives (to exclude other languages' mirrors)
+        var allMirrorIds = config.LanguageAlternatives
+            .SelectMany(a => a.MirroredLibraries)
+            .Where(m => m.TargetLibraryId.HasValue)
+            .Select(m => m.TargetLibraryId!.Value)
+            .ToHashSet();
+
+        // Handle null library list
+        if (allLibraries == null)
+        {
+            yield break;
+        }
+
         foreach (var library in allLibraries)
         {
             var libraryId = Guid.Parse(library.ItemId);
+            var isManaged = managedLibraries.Contains(libraryId);
 
-            // Check if this library is a mirror for our alternative
-            var isMirrorForAlternative = alternative.MirroredLibraries.Any(m => m.TargetLibraryId == libraryId);
-            if (isMirrorForAlternative)
+            if (!isManaged)
             {
-                // Include mirror libraries for the user's language
+                // This library is NOT part of the multi-lang system (like "Home Videos")
+                // We don't include it here - it will be handled separately to preserve user's existing access
+                continue;
+            }
+
+            // This library IS managed by the plugin
+
+            // Is this a mirror for the user's language?
+            if (userMirrorIds.Contains(libraryId))
+            {
                 yield return libraryId;
                 continue;
             }
 
-            // Check if this is a source library that has been mirrored
-            if (mirroredSourceIds.Contains(libraryId))
-            {
-                // Exclude source libraries that have mirrors (user should see mirror instead)
-                continue;
-            }
-
-            // Check if this library is a mirror for another alternative
-            var isMirrorForOther = config.LanguageAlternatives
-                .Where(a => a.Id != alternative.Id)
-                .Any(a => a.MirroredLibraries.Any(m => m.TargetLibraryId == libraryId));
-
-            if (isMirrorForOther)
+            // Is this a mirror for a DIFFERENT language?
+            if (allMirrorIds.Contains(libraryId))
             {
                 // Exclude mirrors for other languages
                 continue;
             }
 
-            // Include non-mirrored source libraries (e.g., libraries not configured for mirroring)
+            // This is a source library - should it be shown?
+            if (userMirroredSourceIds.Contains(libraryId))
+            {
+                // User has a mirror for this source, so hide the source
+                continue;
+            }
+
+            // Source library without a mirror for this language - show it
             yield return libraryId;
         }
+    }
+
+    /// <summary>
+    /// Gets all library IDs that are managed by the plugin (sources with mirrors + all mirrors).
+    /// Libraries not in this set should have their access preserved as-is.
+    /// </summary>
+    private HashSet<Guid> GetManagedLibraryIds()
+    {
+        var config = Plugin.Instance?.Configuration;
+        if (config == null)
+        {
+            return new HashSet<Guid>();
+        }
+
+        var managed = new HashSet<Guid>();
+
+        foreach (var alternative in config.LanguageAlternatives)
+        {
+            foreach (var mirror in alternative.MirroredLibraries)
+            {
+                // Add source library
+                managed.Add(mirror.SourceLibraryId);
+
+                // Add mirror library if it exists
+                if (mirror.TargetLibraryId.HasValue)
+                {
+                    managed.Add(mirror.TargetLibraryId.Value);
+                }
+            }
+        }
+
+        return managed;
     }
 
     /// <inheritdoc />
@@ -342,6 +427,107 @@ public class LibraryAccessService : ILibraryAccessService
                 yield return libraryId;
             }
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<int> EnableAllUsersAsync(CancellationToken cancellationToken = default)
+    {
+        var config = Plugin.Instance?.Configuration;
+        if (config == null)
+        {
+            return 0;
+        }
+
+        var allUsers = _userManager.Users.ToList();
+        var enabledCount = 0;
+
+        foreach (var user in allUsers)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                // Check if user already has a config entry
+                var existingConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == user.Id);
+
+                if (existingConfig != null)
+                {
+                    // Update existing entry to be managed
+                    if (!existingConfig.IsPluginManaged)
+                    {
+                        existingConfig.IsPluginManaged = true;
+                        existingConfig.SetAt = DateTime.UtcNow;
+                        existingConfig.SetBy = "bulk-enable";
+                        enabledCount++;
+                    }
+                }
+                else
+                {
+                    // Create new entry for unmanaged user
+                    config.UserLanguages.Add(new UserLanguageConfig
+                    {
+                        UserId = user.Id,
+                        Username = user.Username,
+                        IsPluginManaged = true,
+                        SelectedAlternativeId = null, // Default language
+                        ManuallySet = false,
+                        SetAt = DateTime.UtcNow,
+                        SetBy = "bulk-enable"
+                    });
+                    enabledCount++;
+                }
+
+                // Apply library access for this user
+                await UpdateUserLibraryAccessAsync(user.Id, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to enable user {Username}", user.Username);
+            }
+        }
+
+        // Save configuration
+        Plugin.Instance?.SaveConfiguration();
+
+        _logger.LogInformation("Enabled plugin management for {Count} users", enabledCount);
+        return enabledCount;
+    }
+
+    /// <inheritdoc />
+    public async Task DisableUserAsync(Guid userId, bool restoreFullAccess = false, CancellationToken cancellationToken = default)
+    {
+        var config = Plugin.Instance?.Configuration;
+        if (config == null)
+        {
+            return;
+        }
+
+        var user = _userManager.GetUserById(userId);
+        if (user == null)
+        {
+            _logger.LogWarning("User {UserId} not found", userId);
+            return;
+        }
+
+        // Find and update user config
+        var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
+        if (userConfig != null)
+        {
+            userConfig.IsPluginManaged = false;
+            userConfig.SetAt = DateTime.UtcNow;
+            userConfig.SetBy = "admin-disabled";
+        }
+
+        // Optionally restore full access
+        if (restoreFullAccess)
+        {
+            user.SetPermission(PermissionKind.EnableAllFolders, true);
+            await _userManager.UpdateUserAsync(user).ConfigureAwait(false);
+            _logger.LogInformation("Restored EnableAllFolders for user {Username}", user.Username);
+        }
+
+        Plugin.Instance?.SaveConfiguration();
+        _logger.LogInformation("Disabled plugin management for user {Username}", user.Username);
     }
 
     /// <summary>

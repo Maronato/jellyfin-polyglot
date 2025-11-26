@@ -18,7 +18,16 @@ public class UserLanguageConfig
     public string Username { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the assigned language alternative ID (null = default/no filter).
+    /// Gets or sets a value indicating whether the plugin manages this user's library access.
+    /// When true, the plugin will set EnableAllFolders=false and configure EnabledFolders.
+    /// When false, the plugin ignores this user and their Jellyfin settings remain unchanged.
+    /// </summary>
+    public bool IsPluginManaged { get; set; }
+
+    /// <summary>
+    /// Gets or sets the assigned language alternative ID.
+    /// null = default language (access to source libraries only, no alternatives).
+    /// Only applies when IsPluginManaged is true.
     /// </summary>
     public Guid? SelectedAlternativeId { get; set; }
 

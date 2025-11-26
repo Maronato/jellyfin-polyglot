@@ -124,13 +124,16 @@ public class LibraryAccessServiceTests : IDisposable
     }
 
     [Fact]
-    public void GetExpectedLibraryAccess_NonMirroredLibraries_AreIncluded()
+    public void GetExpectedLibraryAccess_UnmanagedLibraries_AreNotReturned()
     {
         // Arrange
+        // The new design: GetExpectedLibraryAccess only returns MANAGED libraries.
+        // Unmanaged libraries (like "Music" with no mirrors) are preserved separately
+        // by UpdateUserLibraryAccessAsync based on user's current access.
         var userId = Guid.NewGuid();
-        var moviesId = Guid.NewGuid();
-        var musicId = Guid.NewGuid(); // Not mirrored
-        var moviesMirrorId = Guid.NewGuid();
+        var moviesId = Guid.NewGuid();       // Source with mirror - MANAGED
+        var musicId = Guid.NewGuid();         // No mirror - NOT MANAGED
+        var moviesMirrorId = Guid.NewGuid();  // Mirror - MANAGED
 
         var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
         _context.AddMirror(alternative, moviesId, "Movies", moviesMirrorId);
@@ -149,7 +152,7 @@ public class LibraryAccessServiceTests : IDisposable
 
         // Assert
         result.Should().Contain(moviesMirrorId, "user should see their movie mirror");
-        result.Should().Contain(musicId, "user should see non-mirrored libraries");
+        result.Should().NotContain(musicId, "unmanaged libraries are NOT returned by GetExpectedLibraryAccess");
         result.Should().NotContain(moviesId, "user should NOT see source of mirrored library");
     }
 
@@ -231,6 +234,112 @@ public class LibraryAccessServiceTests : IDisposable
         var result = dashIndex > 0 ? input.Substring(0, dashIndex) : input;
 
         result.Should().Be(expected);
+    }
+
+    #endregion
+
+    #region IsPluginManaged Tests
+
+    [Fact]
+    public void GetExpectedLibraryAccess_ManagedUserOnDefault_SeesSourceLibraries()
+    {
+        // Arrange - User is managed but has no specific language (default libraries)
+        var userId = Guid.NewGuid();
+        var moviesId = Guid.NewGuid();
+        var ptMirrorId = Guid.NewGuid();
+
+        var portuguese = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+        _context.AddMirror(portuguese, moviesId, "Movies", ptMirrorId);
+        
+        // User is managed but with no language (default)
+        _context.AddUserLanguage(userId, null);
+
+        var libraries = new List<VirtualFolderInfo>
+        {
+            CreateVirtualFolder(moviesId, "Movies"),
+            CreateVirtualFolder(ptMirrorId, "Filmes")
+        };
+        _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(libraries);
+
+        // Act
+        var result = _service.GetExpectedLibraryAccess(userId).ToList();
+
+        // Assert - Default users see source, not mirrors
+        result.Should().Contain(moviesId, "default user should see source library");
+        result.Should().NotContain(ptMirrorId, "default user should NOT see language mirrors");
+    }
+
+    [Fact]
+    public void GetExpectedLibraryAccess_PartialMirrorSetup_ShowsSourceForUnmirrored()
+    {
+        // Arrange - Movies has PT and ES mirrors, Shows only has PT mirror
+        // Spanish user should see: Película, Shows (not Movies, not Filmes, not Series)
+        var userId = Guid.NewGuid();
+        var moviesId = Guid.NewGuid();
+        var showsId = Guid.NewGuid();
+        var ptMoviesMirror = Guid.NewGuid();
+        var esMoviesMirror = Guid.NewGuid();
+        var ptShowsMirror = Guid.NewGuid();
+
+        var portuguese = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+        var spanish = _context.AddLanguageAlternative("Spanish", "es-ES");
+
+        _context.AddMirror(portuguese, moviesId, "Movies", ptMoviesMirror);
+        _context.AddMirror(portuguese, showsId, "Shows", ptShowsMirror);
+        _context.AddMirror(spanish, moviesId, "Movies", esMoviesMirror);
+        // Note: No Spanish mirror for Shows
+
+        _context.AddUserLanguage(userId, spanish.Id);
+
+        var libraries = new List<VirtualFolderInfo>
+        {
+            CreateVirtualFolder(moviesId, "Movies"),
+            CreateVirtualFolder(showsId, "Shows"),
+            CreateVirtualFolder(ptMoviesMirror, "Filmes"),
+            CreateVirtualFolder(ptShowsMirror, "Series"),
+            CreateVirtualFolder(esMoviesMirror, "Películas")
+        };
+        _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(libraries);
+
+        // Act
+        var result = _service.GetExpectedLibraryAccess(userId).ToList();
+
+        // Assert
+        result.Should().Contain(esMoviesMirror, "Spanish user sees Spanish movie mirror");
+        result.Should().Contain(showsId, "Spanish user sees Shows source (no Spanish mirror)");
+        result.Should().NotContain(moviesId, "Spanish user does NOT see Movies source (has mirror)");
+        result.Should().NotContain(ptMoviesMirror, "Spanish user does NOT see Portuguese movie mirror");
+        result.Should().NotContain(ptShowsMirror, "Spanish user does NOT see Portuguese show mirror");
+    }
+
+    [Fact]
+    public void GetExpectedLibraryAccess_UnmanagedLibrary_NotReturnedByMethod()
+    {
+        // Arrange - "Home Videos" is not part of any mirror configuration
+        var userId = Guid.NewGuid();
+        var moviesId = Guid.NewGuid();
+        var homeVideosId = Guid.NewGuid(); // Unmanaged
+        var ptMirrorId = Guid.NewGuid();
+
+        var portuguese = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+        _context.AddMirror(portuguese, moviesId, "Movies", ptMirrorId);
+        _context.AddUserLanguage(userId, portuguese.Id);
+
+        var libraries = new List<VirtualFolderInfo>
+        {
+            CreateVirtualFolder(moviesId, "Movies"),
+            CreateVirtualFolder(homeVideosId, "Home Videos"),
+            CreateVirtualFolder(ptMirrorId, "Filmes")
+        };
+        _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(libraries);
+
+        // Act
+        var result = _service.GetExpectedLibraryAccess(userId).ToList();
+
+        // Assert - Home Videos should NOT be in the result (preserved separately)
+        result.Should().Contain(ptMirrorId, "user sees their mirror");
+        result.Should().NotContain(homeVideosId, "unmanaged library is not returned by GetExpectedLibraryAccess");
+        result.Should().NotContain(moviesId, "source with mirror is excluded");
     }
 
     #endregion

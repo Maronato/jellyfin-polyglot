@@ -302,11 +302,19 @@ public class MultiLangController : ControllerBase
     {
         try
         {
+            // Handle "disabled" option - user is not managed by plugin
+            if (request.IsDisabled)
+            {
+                await _libraryAccessService.DisableUserAsync(userId, restoreFullAccess: false, cancellationToken);
+                return NoContent();
+            }
+
             await _userLanguageService.AssignLanguageAsync(
                 userId,
                 request.AlternativeId,
                 "admin",
                 manuallySet: request.ManuallySet,
+                isPluginManaged: true, // Enable plugin management
                 cancellationToken);
 
             return NoContent();
@@ -320,6 +328,32 @@ public class MultiLangController : ControllerBase
             _logger.LogError(ex, "Failed to set language for user {UserId}", userId);
             return BadRequest(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Enables plugin management for all users, setting them to default language.
+    /// </summary>
+    [HttpPost("Users/EnableAll")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult<EnableAllUsersResult>> EnableAllUsers(CancellationToken cancellationToken = default)
+    {
+        var count = await _libraryAccessService.EnableAllUsersAsync(cancellationToken);
+        return Ok(new EnableAllUsersResult { UsersEnabled = count });
+    }
+
+    /// <summary>
+    /// Disables plugin management for a user.
+    /// </summary>
+    [HttpPost("Users/{userId:guid}/Disable")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DisableUser(
+        Guid userId,
+        [FromQuery] bool restoreFullAccess = false,
+        CancellationToken cancellationToken = default)
+    {
+        await _libraryAccessService.DisableUserAsync(userId, restoreFullAccess, cancellationToken);
+        return NoContent();
     }
 
     #endregion
@@ -569,7 +603,7 @@ public class AddLibraryMirrorRequest
 public class SetUserLanguageRequest
 {
     /// <summary>
-    /// Gets or sets the language alternative ID (null to clear).
+    /// Gets or sets the language alternative ID (null = default language, shows source libraries).
     /// </summary>
     public Guid? AlternativeId { get; set; }
 
@@ -577,6 +611,23 @@ public class SetUserLanguageRequest
     /// Gets or sets whether this is a manual override.
     /// </summary>
     public bool ManuallySet { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether the user should be disabled from plugin management.
+    /// When true, the plugin will not manage this user's library access.
+    /// </summary>
+    public bool IsDisabled { get; set; }
+}
+
+/// <summary>
+/// Result of enabling all users.
+/// </summary>
+public class EnableAllUsersResult
+{
+    /// <summary>
+    /// Gets or sets the number of users that were enabled.
+    /// </summary>
+    public int UsersEnabled { get; set; }
 }
 
 /// <summary>

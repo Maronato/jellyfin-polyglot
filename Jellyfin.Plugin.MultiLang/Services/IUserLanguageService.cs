@@ -18,9 +18,10 @@ public interface IUserLanguageService
     /// <param name="alternativeId">The language alternative ID (null to clear assignment).</param>
     /// <param name="setBy">The source of the assignment ("admin", "ldap", "user-sync").</param>
     /// <param name="manuallySet">Whether this is a manual override that blocks LDAP updates.</param>
+    /// <param name="isPluginManaged">Whether the plugin should manage this user's library access.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Task representing the async operation.</returns>
-    Task AssignLanguageAsync(Guid userId, Guid? alternativeId, string setBy, bool manuallySet = false, CancellationToken cancellationToken = default);
+    Task AssignLanguageAsync(Guid userId, Guid? alternativeId, string setBy, bool manuallySet = false, bool isPluginManaged = true, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the current language assignment for a user.

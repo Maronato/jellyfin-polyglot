@@ -68,6 +68,7 @@ public class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
                     languageId.Value,
                     "ldap",
                     manuallySet: false,
+                    isPluginManaged: true,
                     CancellationToken.None).ConfigureAwait(false);
 
                 _logger.LogInformation(

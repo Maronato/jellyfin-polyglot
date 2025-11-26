@@ -49,5 +49,22 @@ public interface ILibraryAccessService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Task representing the async operation.</returns>
     Task SyncUserLanguagePreferencesAsync(Guid userId, string languageCode, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Enables plugin management for all users, setting them to default language.
+    /// This will set EnableAllFolders=false and configure their library access.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of users enabled.</returns>
+    Task<int> EnableAllUsersAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Disables plugin management for a user, optionally restoring EnableAllFolders.
+    /// </summary>
+    /// <param name="userId">The user ID.</param>
+    /// <param name="restoreFullAccess">If true, sets EnableAllFolders back to true.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Task representing the async operation.</returns>
+    Task DisableUserAsync(Guid userId, bool restoreFullAccess = false, CancellationToken cancellationToken = default);
 }
 
