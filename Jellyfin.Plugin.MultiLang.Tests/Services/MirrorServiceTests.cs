@@ -348,14 +348,33 @@ public class MirrorServiceFileOperationTests : IDisposable
         };
 
         var progressValues = new List<double>();
-        var progress = new Progress<double>(v => progressValues.Add(v));
+        // Use synchronous progress reporter instead of Progress<T> which posts callbacks asynchronously
+        var progress = new SynchronousProgress<double>(v => progressValues.Add(v));
 
         // Act
         await _service.SyncMirrorAsync(mirror, progress);
 
         // Assert
         progressValues.Should().NotBeEmpty("progress should be reported");
+        progressValues.Should().HaveCount(2, "progress should be reported once per file");
+        progressValues.Should().EndWith(100, "final progress should be 100%");
     }
+}
+
+/// <summary>
+/// Synchronous implementation of IProgress that invokes the callback immediately
+/// rather than posting to a synchronization context like Progress&lt;T&gt; does.
+/// </summary>
+internal sealed class SynchronousProgress<T> : IProgress<T>
+{
+    private readonly Action<T> _handler;
+
+    public SynchronousProgress(Action<T> handler)
+    {
+        _handler = handler ?? throw new ArgumentNullException(nameof(handler));
+    }
+
+    public void Report(T value) => _handler(value);
 }
 
 /// <summary>
