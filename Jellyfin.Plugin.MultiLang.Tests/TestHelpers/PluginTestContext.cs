@@ -84,7 +84,8 @@ public class PluginTestContext : IDisposable
         Guid userId,
         Guid? alternativeId,
         bool manuallySet = false,
-        string setBy = "admin")
+        string setBy = "admin",
+        bool isPluginManaged = true) // Default to managed
     {
         // Remove existing config for user if present
         Configuration.UserLanguages.RemoveAll(u => u.UserId == userId);
@@ -96,7 +97,8 @@ public class PluginTestContext : IDisposable
             SelectedAlternativeId = alternativeId,
             ManuallySet = manuallySet,
             SetAt = DateTime.UtcNow,
-            SetBy = setBy
+            SetBy = setBy,
+            IsPluginManaged = isPluginManaged
         };
         Configuration.UserLanguages.Add(userConfig);
         return userConfig;

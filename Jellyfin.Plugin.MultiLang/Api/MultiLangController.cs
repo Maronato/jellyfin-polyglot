@@ -238,6 +238,28 @@ public class MultiLangController : ControllerBase
             // Don't return error - mirror was added but sync can be retried
         }
 
+        // Update library access for all users assigned to this language alternative
+        try
+        {
+            var usersWithThisLanguage = config.UserLanguages
+                .Where(u => u.SelectedAlternativeId == alternative.Id && u.IsPluginManaged)
+                .Select(u => u.UserId)
+                .ToList();
+
+            foreach (var userId in usersWithThisLanguage)
+            {
+                await _libraryAccessService.UpdateUserLibraryAccessAsync(userId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            _logger.LogInformation("Updated library access for {Count} users after creating mirror {MirrorName}",
+                usersWithThisLanguage.Count, mirror.TargetLibraryName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update user library access after creating mirror");
+        }
+
         return CreatedAtAction(nameof(GetAlternatives), new { id = alternative.Id }, mirror);
     }
 
@@ -271,6 +293,78 @@ public class MultiLangController : ControllerBase
         }, cancellationToken);
 
         return Accepted();
+    }
+
+    /// <summary>
+    /// Deletes a library mirror from a language alternative.
+    /// </summary>
+    [HttpDelete("Alternatives/{id:guid}/Libraries/{sourceLibraryId:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteLibraryMirror(
+        Guid id,
+        Guid sourceLibraryId,
+        [FromQuery] bool deleteLibrary = false,
+        [FromQuery] bool deleteFiles = false,
+        CancellationToken cancellationToken = default)
+    {
+        var config = Plugin.Instance?.Configuration;
+        if (config == null)
+        {
+            return NotFound();
+        }
+
+        var alternative = config.LanguageAlternatives.FirstOrDefault(a => a.Id == id);
+        if (alternative == null)
+        {
+            return NotFound("Language alternative not found");
+        }
+
+        var mirror = alternative.MirroredLibraries.FirstOrDefault(m => m.SourceLibraryId == sourceLibraryId);
+        if (mirror == null)
+        {
+            return NotFound("Mirror not found");
+        }
+
+        try
+        {
+            await _mirrorService.DeleteMirrorAsync(mirror, deleteLibrary, deleteFiles, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete mirror {MirrorId}", mirror.Id);
+            return BadRequest($"Failed to delete mirror: {ex.Message}");
+        }
+
+        alternative.MirroredLibraries.Remove(mirror);
+        Plugin.Instance?.SaveConfiguration();
+
+        // Update library access for users assigned to this language alternative
+        try
+        {
+            var usersWithThisLanguage = config.UserLanguages
+                .Where(u => u.SelectedAlternativeId == alternative.Id && u.IsPluginManaged)
+                .Select(u => u.UserId)
+                .ToList();
+
+            foreach (var userId in usersWithThisLanguage)
+            {
+                await _libraryAccessService.UpdateUserLibraryAccessAsync(userId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            _logger.LogInformation("Updated library access for {Count} users after deleting mirror {MirrorName}",
+                usersWithThisLanguage.Count, mirror.TargetLibraryName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update user library access after deleting mirror");
+        }
+
+        _logger.LogInformation("Deleted mirror: {MirrorName} from alternative {AlternativeName}", 
+            mirror.TargetLibraryName, alternative.Name);
+
+        return NoContent();
     }
 
     #endregion
@@ -519,6 +613,87 @@ public class MultiLangController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>
+    /// Cleans up orphaned mirrors (source or mirror library no longer exists).
+    /// </summary>
+    [HttpPost("CleanupOrphanedMirrors")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult<CleanupResult>> CleanupOrphanedMirrors(CancellationToken cancellationToken = default)
+    {
+        var config = Plugin.Instance?.Configuration;
+        if (config == null)
+        {
+            return NotFound();
+        }
+
+        var existingLibraryIds = _mirrorService.GetJellyfinLibraries()
+            .Select(l => l.Id)
+            .ToHashSet();
+
+        var cleanedUp = new List<string>();
+
+        foreach (var alternative in config.LanguageAlternatives.ToList())
+        {
+            var mirrorsToRemove = new List<LibraryMirror>();
+
+            foreach (var mirror in alternative.MirroredLibraries)
+            {
+                var shouldDelete = false;
+                var reason = string.Empty;
+
+                // Check if source library still exists
+                if (!existingLibraryIds.Contains(mirror.SourceLibraryId))
+                {
+                    shouldDelete = true;
+                    reason = "source library deleted";
+                }
+                // Check if target library still exists
+                else if (mirror.TargetLibraryId.HasValue && !existingLibraryIds.Contains(mirror.TargetLibraryId.Value))
+                {
+                    shouldDelete = true;
+                    reason = "mirror library deleted";
+                }
+
+                if (shouldDelete)
+                {
+                    mirrorsToRemove.Add(mirror);
+                    cleanedUp.Add($"{mirror.TargetLibraryName} ({reason})");
+
+                    try
+                    {
+                        // Delete files only if source was deleted (files are now orphaned)
+                        var deleteFiles = reason == "source library deleted";
+                        await _mirrorService.DeleteMirrorAsync(mirror, deleteLibrary: false, deleteFiles: deleteFiles, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to delete mirror {MirrorId}", mirror.Id);
+                    }
+                }
+            }
+
+            foreach (var mirror in mirrorsToRemove)
+            {
+                alternative.MirroredLibraries.Remove(mirror);
+            }
+        }
+
+        if (cleanedUp.Count > 0)
+        {
+            Plugin.Instance?.SaveConfiguration();
+
+            // Reconcile user access after cleanup
+            await _libraryAccessService.ReconcileAllUsersAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return Ok(new CleanupResult
+        {
+            CleanedUpMirrors = cleanedUp,
+            TotalCleaned = cleanedUp.Count
+        });
+    }
+
     #endregion
 
     #region Helpers
@@ -699,6 +874,22 @@ public class PluginSettings
     /// Note: Mirrors are also synced automatically after library scans.
     /// </summary>
     public int MirrorSyncIntervalHours { get; set; }
+}
+
+/// <summary>
+/// Result of cleanup operation.
+/// </summary>
+public class CleanupResult
+{
+    /// <summary>
+    /// Gets or sets the list of cleaned up mirrors.
+    /// </summary>
+    public List<string> CleanedUpMirrors { get; set; } = new List<string>();
+
+    /// <summary>
+    /// Gets or sets the total number of mirrors cleaned up.
+    /// </summary>
+    public int TotalCleaned { get; set; }
 }
 
 #endregion

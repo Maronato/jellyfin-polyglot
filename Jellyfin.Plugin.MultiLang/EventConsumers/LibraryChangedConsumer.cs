@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,6 +21,7 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
 {
     private readonly ILibraryManager _libraryManager;
     private readonly IMirrorService _mirrorService;
+    private readonly ILibraryAccessService _libraryAccessService;
     private readonly ILogger<LibraryChangedConsumer> _logger;
     private bool _disposed;
 
@@ -29,10 +31,12 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
     public LibraryChangedConsumer(
         ILibraryManager libraryManager,
         IMirrorService mirrorService,
+        ILibraryAccessService libraryAccessService,
         ILogger<LibraryChangedConsumer> logger)
     {
         _libraryManager = libraryManager;
         _mirrorService = mirrorService;
+        _libraryAccessService = libraryAccessService;
         _logger = logger;
     }
 
@@ -104,9 +108,30 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
     }
 
     /// <summary>
-    /// Checks for and marks orphaned mirrors when a library is deleted.
+    /// Checks for and cleans up orphaned mirrors when a library is deleted.
+    /// - If source library is deleted: Delete the entire mirror (config + files)
+    /// - If mirror library is deleted: Remove the mirror config
     /// </summary>
     private void CheckForOrphanedMirrors()
+    {
+        // Run async cleanup in background
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await CleanupOrphanedMirrorsAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to cleanup orphaned mirrors");
+            }
+        });
+    }
+
+    /// <summary>
+    /// Async implementation of orphaned mirror cleanup.
+    /// </summary>
+    private async Task CleanupOrphanedMirrorsAsync(CancellationToken cancellationToken)
     {
         var config = Plugin.Instance?.Configuration;
         if (config == null)
@@ -118,7 +143,7 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
             .Select(l => l.Id)
             .ToHashSet();
 
-        var hasChanges = false;
+        var mirrorsToDelete = new List<(LanguageAlternative Alternative, LibraryMirror Mirror, string Reason)>();
 
         foreach (var alternative in config.LanguageAlternatives)
         {
@@ -128,33 +153,68 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
                 if (!existingLibraryIds.Contains(mirror.SourceLibraryId))
                 {
                     _logger.LogWarning(
-                        "Source library {SourceLibraryId} for mirror {MirrorId} no longer exists - marking as orphaned",
+                        "Source library {SourceLibraryId} for mirror {MirrorId} no longer exists - will delete mirror",
                         mirror.SourceLibraryId,
                         mirror.Id);
 
-                    mirror.Status = SyncStatus.Error;
-                    mirror.LastError = "Source library no longer exists";
-                    hasChanges = true;
+                    mirrorsToDelete.Add((alternative, mirror, "source deleted"));
+                    continue;
                 }
 
                 // Check if target library still exists (if it was created)
                 if (mirror.TargetLibraryId.HasValue && !existingLibraryIds.Contains(mirror.TargetLibraryId.Value))
                 {
                     _logger.LogWarning(
-                        "Target library {TargetLibraryId} for mirror {MirrorId} no longer exists - will recreate on next sync",
+                        "Target library {TargetLibraryId} for mirror {MirrorId} no longer exists - removing mirror config",
                         mirror.TargetLibraryId.Value,
                         mirror.Id);
 
-                    mirror.TargetLibraryId = null;
-                    mirror.Status = SyncStatus.Pending;
-                    hasChanges = true;
+                    mirrorsToDelete.Add((alternative, mirror, "mirror deleted"));
                 }
             }
         }
 
-        if (hasChanges)
+        // Delete orphaned mirrors
+        foreach (var (alternative, mirror, reason) in mirrorsToDelete)
+        {
+            try
+            {
+                // Delete files only if source was deleted (files are now orphaned)
+                // If only the mirror library was deleted, the source still has the files
+                var deleteFiles = reason == "source deleted";
+
+                // Don't try to delete Jellyfin library - it's already gone
+                await _mirrorService.DeleteMirrorAsync(mirror, deleteLibrary: false, deleteFiles: deleteFiles, cancellationToken)
+                    .ConfigureAwait(false);
+
+                // Remove from alternative's mirror list
+                alternative.MirroredLibraries.Remove(mirror);
+
+                _logger.LogInformation(
+                    "Removed orphaned mirror {MirrorName} ({Reason})",
+                    mirror.TargetLibraryName,
+                    reason);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to delete orphaned mirror {MirrorId}", mirror.Id);
+            }
+        }
+
+        if (mirrorsToDelete.Count > 0)
         {
             Plugin.Instance?.SaveConfiguration();
+
+            // Reconcile user access after cleanup
+            try
+            {
+                await _libraryAccessService.ReconcileAllUsersAsync(cancellationToken).ConfigureAwait(false);
+                _logger.LogInformation("Reconciled user access after cleaning up {Count} orphaned mirrors", mirrorsToDelete.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to reconcile user access after cleanup");
+            }
         }
     }
 

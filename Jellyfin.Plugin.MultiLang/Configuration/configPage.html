@@ -11,16 +11,6 @@
                 <h2>Multi-Language Library</h2>
                 <p class="fieldDescription">Create language-specific library mirrors with hardlinked media files and separate metadata.</p>
 
-                <!-- Warning Banner -->
-                <div class="paperList" style="background: #5c3d00; border: 1px solid #cc7700; margin-bottom: 1em;">
-                    <div class="listItem">
-                        <div class="listItemBody">
-                            <h3 class="listItemBodyText" style="color: #ffcc00;">⚠️ Watch History Warning</h3>
-                            <div class="fieldDescription">Changing a user's language assignment will make their watch history appear "reset" because each library has unique item IDs. The original progress is preserved in the original library.</div>
-                    </div>
-                </div>
-            </div>
-
                 <!-- Tabs -->
                 <div class="tabs-viewmenubar" style="margin-bottom: 2em;">
                     <button is="emby-button" class="emby-tab-button emby-button-tab active" data-tab="languagesTab">Languages</button>
@@ -32,7 +22,7 @@
             <!-- Languages Tab -->
                 <div id="languagesTab" class="tabContent active">
                     <div class="verticalSection">
-                        <h3 class="sectionTitle">Existing Jellyfin Libraries</h3>
+                        <h3 class="sectionTitle">Existing Libraries</h3>
                         <div id="librariesList" class="paperList"></div>
                 </div>
 
@@ -53,6 +43,22 @@
                         <h3 class="sectionTitle">User Language Assignments</h3>
                         <div id="usersList" class="paperList"></div>
                 </div>
+
+                    <div class="verticalSection">
+                        <h3 class="sectionTitle">User Management</h3>
+                        <p class="fieldDescription" style="margin-bottom: 1em;">
+                            Many users have "Enable access to all libraries" in their Jellyfin profile, which prevents
+                            the plugin from managing their library access. Use the button below to enable plugin management
+                            for all users at once. This will set each user to "Default libraries" (they see only source
+                            libraries, not language-specific mirrors).
+                        </p>
+                        <button is="emby-button" type="button" class="raised" id="btnEnableAllUsers">
+                            <span>Enable Plugin for All Users</span>
+                        </button>
+                        <div class="fieldDescription" style="margin-top: 0.5em;">
+                            This will set EnableAllFolders=false for each user and configure their library access based on language settings.
+                        </div>
+                    </div>
             </div>
 
             <!-- LDAP Tab -->
@@ -125,19 +131,15 @@
                         </div>
 
                         <div class="verticalSection">
-                            <h3 class="sectionTitle">User Management</h3>
+                            <h3 class="sectionTitle">Maintenance</h3>
                             <p class="fieldDescription" style="margin-bottom: 1em;">
-                                Many users have "Enable access to all libraries" in their Jellyfin profile, which prevents
-                                the plugin from managing their library access. Use the button below to enable plugin management
-                                for all users at once. This will set each user to "Default libraries" (they see only source
-                                libraries, not language-specific mirrors).
+                                If you delete a source library or a mirror library manually, the plugin will detect this automatically.
+                                You can also manually cleanup orphaned mirrors using the button below.
                             </p>
-                            <button is="emby-button" type="button" class="raised" id="btnEnableAllUsers">
-                                <span>Enable Plugin for All Users</span>
+                            <button is="emby-button" type="button" class="raised" id="btnCleanupMirrors">
+                                <span>Cleanup Orphaned Mirrors</span>
                             </button>
-                            <div class="fieldDescription" style="margin-top: 0.5em;">
-                                This will set EnableAllFolders=false for each user and configure their library access based on language settings.
-                            </div>
+                            <div id="cleanupResult" class="fieldDescription" style="margin-top: 0.5em; display: none;"></div>
                         </div>
 
                         <div>
@@ -456,8 +458,11 @@
                         self.alternatives.forEach(function(alt) {
                             html += '<div class="listItem" style="flex-wrap: wrap;">';
                             html += '<div class="listItemBody" style="flex: 1;">';
-                            html += '<div class="listItemBodyText">' + alt.Name + ' (' + alt.LanguageCode + ')</div>';
-                            html += '<div class="listItemBodyText secondary">Metadata: ' + (alt.MetadataLanguage || 'auto') + '-' + (alt.MetadataCountry || 'auto') + '</div>';
+                            var langDisplay = self.getLanguageDisplayName(alt.MetadataLanguage);
+                            var countryDisplay = alt.MetadataCountry || '';
+                            var metadataInfo = langDisplay + (countryDisplay ? ' (' + countryDisplay + ')' : '');
+                            html += '<div class="listItemBodyText">' + alt.Name + '</div>';
+                            html += '<div class="listItemBodyText secondary">Metadata: ' + metadataInfo + ' • Path: ' + (alt.DestinationBasePath || 'not set') + '</div>';
                             html += '</div>';
                             html += '<button is="emby-button" type="button" class="fab" onclick="MultiLangConfig.showAddMirrorDialog(\'' + alt.Id + '\')"><span class="material-icons add"></span></button>';
                             html += '<button is="emby-button" type="button" class="fab" onclick="MultiLangConfig.syncAlternative(\'' + alt.Id + '\')"><span class="material-icons sync"></span></button>';
@@ -469,10 +474,11 @@
                                 alt.MirroredLibraries.forEach(function(mirror) {
                                     html += '<div class="listItem" style="background: rgba(0,0,0,0.2);">';
                                     html += '<span class="material-icons">subdirectory_arrow_right</span>';
-                                    html += '<div class="listItemBody">';
+                                    html += '<div class="listItemBody" style="flex: 1;">';
                                     html += '<div class="listItemBodyText">' + mirror.SourceLibraryName + ' → ' + mirror.TargetLibraryName + '</div>';
                                     html += '<div class="listItemBodyText secondary">' + mirror.Status + (mirror.LastSyncedAt ? ' • Last sync: ' + new Date(mirror.LastSyncedAt).toLocaleString() : '') + '</div>';
                                     html += '</div>';
+                                    html += '<button is="emby-button" type="button" class="fab" onclick="MultiLangConfig.deleteMirror(\'' + alt.Id + '\', \'' + mirror.SourceLibraryId + '\')"><span class="material-icons delete"></span></button>';
                                     html += '</div>';
                                 });
                                 html += '</div>';
@@ -736,6 +742,23 @@
                     });
                 },
 
+                deleteMirror: function(altId, sourceLibraryId) {
+                    var self = this;
+                    Dashboard.confirm('Delete this mirror library? This will remove the Jellyfin library and its hardlinked files.', 'Confirm Delete', function(result) {
+                        if (result) {
+                            Dashboard.showLoadingMsg();
+                            self.apiDelete('MultiLang/Alternatives/' + altId + '/Libraries/' + sourceLibraryId + '?deleteLibrary=true&deleteFiles=true').then(function() {
+                                self.loadAlternatives();
+                                self.loadLibraries();
+                                Dashboard.hideLoadingMsg();
+                            }).catch(function(e) {
+                                Dashboard.hideLoadingMsg();
+                                Dashboard.alert('Failed to delete mirror: ' + e.message);
+                            });
+                        }
+                    });
+                },
+
                 setUserLanguage: function(userId, value) {
                     var self = this;
                     Dashboard.showLoadingMsg();
@@ -837,6 +860,33 @@
                             }
                         }
                     );
+                },
+
+                cleanupOrphanedMirrors: function() {
+                    var self = this;
+                    Dashboard.showLoadingMsg();
+                    var resultDiv = document.getElementById('cleanupResult');
+                    resultDiv.style.display = 'none';
+                    
+                    this.apiPost('MultiLang/CleanupOrphanedMirrors', {}).then(function(response) {
+                        Dashboard.hideLoadingMsg();
+                        resultDiv.style.display = 'block';
+                        if (response.TotalCleaned === 0) {
+                            resultDiv.textContent = 'No orphaned mirrors found.';
+                            resultDiv.style.color = '#52b54b';
+                        } else {
+                            resultDiv.innerHTML = '<strong>Cleaned up ' + response.TotalCleaned + ' mirrors:</strong><br/>' + 
+                                response.CleanedUpMirrors.join('<br/>');
+                            resultDiv.style.color = '#f2b01e';
+                            // Reload the alternatives list
+                            self.loadAlternatives();
+                        }
+                    }).catch(function(e) {
+                        Dashboard.hideLoadingMsg();
+                        resultDiv.style.display = 'block';
+                        resultDiv.textContent = 'Failed to cleanup: ' + e.message;
+                        resultDiv.style.color = '#cc3333';
+                    });
                 },
 
                 saveSettings: function() {
@@ -952,6 +1002,11 @@
                         self.enableAllUsers();
                     });
 
+                    // Cleanup orphaned mirrors button
+                    document.getElementById('btnCleanupMirrors').addEventListener('click', function() {
+                        self.cleanupOrphanedMirrors();
+                    });
+
                     // Test LDAP button
                     document.getElementById('btnTestLdap').addEventListener('click', function() {
                         self.testLdapConnection();
@@ -1018,6 +1073,15 @@
             }
             .tabContent {
                 min-height: 200px;
+            }
+            .emby-tab-button.active {
+                border-bottom: 3px solid #00a4dc;
+                color: #00a4dc;
+                font-weight: 600;
+            }
+            .emby-tab-button {
+                border-bottom: 3px solid transparent;
+                transition: border-color 0.2s ease, color 0.2s ease;
             }
         </style>
     </div>

@@ -205,6 +205,13 @@ public class LibraryAccessService : ILibraryAccessService
         // Check if user has a language assigned
         var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
 
+        // If user is not in config or not managed by plugin, return empty
+        // This means we won't modify their library access at all
+        if (userConfig == null || !userConfig.IsPluginManaged)
+        {
+            yield break;
+        }
+
         // Get all libraries that are part of the multi-lang system
         var managedLibraries = GetManagedLibraryIds();
 

@@ -303,6 +303,389 @@ public class MultiLangControllerTests : IDisposable
     }
 
     #endregion
+
+    #region AddLibraryMirror - User Access Updates
+
+    [Fact]
+    public async Task AddLibraryMirror_UpdatesAccessForUsersWithThatLanguage()
+    {
+        // Arrange - create an alternative and users assigned to it
+        var alternativeId = Guid.NewGuid();
+        var sourceLibraryId = Guid.NewGuid();
+        var userId1 = Guid.NewGuid();
+        var userId2 = Guid.NewGuid();
+
+        var alternative = new LanguageAlternative
+        {
+            Id = alternativeId,
+            Name = "Portuguese",
+            LanguageCode = "pt-BR",
+            DestinationBasePath = "/data/portuguese",
+            MirroredLibraries = new List<LibraryMirror>()
+        };
+        _context.Configuration.LanguageAlternatives.Add(alternative);
+
+        // Two users assigned to Portuguese (plugin managed)
+        _context.Configuration.UserLanguages.Add(new UserLanguageConfig
+        {
+            UserId = userId1,
+            SelectedAlternativeId = alternativeId,
+            IsPluginManaged = true
+        });
+        _context.Configuration.UserLanguages.Add(new UserLanguageConfig
+        {
+            UserId = userId2,
+            SelectedAlternativeId = alternativeId,
+            IsPluginManaged = true
+        });
+
+        // Setup mock for source library
+        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
+            .Returns(new List<LibraryInfo>
+            {
+                new LibraryInfo { Id = sourceLibraryId, Name = "Movies", CollectionType = "movies" }
+            });
+
+        _mirrorServiceMock.Setup(s => s.ValidateMirrorConfiguration(It.IsAny<Guid>(), It.IsAny<string>()))
+            .Returns((true, (string?)null));
+
+        var request = new AddLibraryMirrorRequest
+        {
+            SourceLibraryId = sourceLibraryId.ToString(),
+            TargetPath = "/data/portuguese/movies",
+            TargetLibraryName = "Filmes"
+        };
+
+        // Act
+        await _controller.AddLibraryMirror(alternativeId, request, CancellationToken.None);
+
+        // Assert - library access should be updated for both users
+        _libraryAccessServiceMock.Verify(
+            s => s.UpdateUserLibraryAccessAsync(userId1, It.IsAny<CancellationToken>()),
+            Times.Once,
+            "Should update access for user1 who has Portuguese assigned");
+
+        _libraryAccessServiceMock.Verify(
+            s => s.UpdateUserLibraryAccessAsync(userId2, It.IsAny<CancellationToken>()),
+            Times.Once,
+            "Should update access for user2 who has Portuguese assigned");
+    }
+
+    [Fact]
+    public async Task AddLibraryMirror_DoesNotUpdateAccessForUsersOnOtherLanguages()
+    {
+        // Arrange - create two alternatives
+        var portugueseId = Guid.NewGuid();
+        var spanishId = Guid.NewGuid();
+        var sourceLibraryId = Guid.NewGuid();
+        var spanishUserId = Guid.NewGuid();
+
+        var portuguese = new LanguageAlternative
+        {
+            Id = portugueseId,
+            Name = "Portuguese",
+            LanguageCode = "pt-BR",
+            DestinationBasePath = "/data/portuguese",
+            MirroredLibraries = new List<LibraryMirror>()
+        };
+        var spanish = new LanguageAlternative
+        {
+            Id = spanishId,
+            Name = "Spanish",
+            LanguageCode = "es-ES",
+            DestinationBasePath = "/data/spanish",
+            MirroredLibraries = new List<LibraryMirror>()
+        };
+        _context.Configuration.LanguageAlternatives.Add(portuguese);
+        _context.Configuration.LanguageAlternatives.Add(spanish);
+
+        // User assigned to Spanish
+        _context.Configuration.UserLanguages.Add(new UserLanguageConfig
+        {
+            UserId = spanishUserId,
+            SelectedAlternativeId = spanishId,
+            IsPluginManaged = true
+        });
+
+        // Setup mock
+        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
+            .Returns(new List<LibraryInfo>
+            {
+                new LibraryInfo { Id = sourceLibraryId, Name = "Movies", CollectionType = "movies" }
+            });
+
+        _mirrorServiceMock.Setup(s => s.ValidateMirrorConfiguration(It.IsAny<Guid>(), It.IsAny<string>()))
+            .Returns((true, (string?)null));
+
+        var request = new AddLibraryMirrorRequest
+        {
+            SourceLibraryId = sourceLibraryId.ToString(),
+            TargetPath = "/data/portuguese/movies",
+            TargetLibraryName = "Filmes"
+        };
+
+        // Act - create mirror for PORTUGUESE
+        await _controller.AddLibraryMirror(portugueseId, request, CancellationToken.None);
+
+        // Assert - Spanish user should NOT be updated
+        _libraryAccessServiceMock.Verify(
+            s => s.UpdateUserLibraryAccessAsync(spanishUserId, It.IsAny<CancellationToken>()),
+            Times.Never,
+            "Should NOT update access for user on different language");
+    }
+
+    [Fact]
+    public async Task AddLibraryMirror_DoesNotUpdateUnmanagedUsers()
+    {
+        // Arrange
+        var alternativeId = Guid.NewGuid();
+        var sourceLibraryId = Guid.NewGuid();
+        var unmanagedUserId = Guid.NewGuid();
+
+        var alternative = new LanguageAlternative
+        {
+            Id = alternativeId,
+            Name = "Portuguese",
+            LanguageCode = "pt-BR",
+            DestinationBasePath = "/data/portuguese",
+            MirroredLibraries = new List<LibraryMirror>()
+        };
+        _context.Configuration.LanguageAlternatives.Add(alternative);
+
+        // User has Portuguese selected but is NOT plugin-managed
+        _context.Configuration.UserLanguages.Add(new UserLanguageConfig
+        {
+            UserId = unmanagedUserId,
+            SelectedAlternativeId = alternativeId,
+            IsPluginManaged = false // Not managed
+        });
+
+        // Setup mock
+        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
+            .Returns(new List<LibraryInfo>
+            {
+                new LibraryInfo { Id = sourceLibraryId, Name = "Movies", CollectionType = "movies" }
+            });
+
+        _mirrorServiceMock.Setup(s => s.ValidateMirrorConfiguration(It.IsAny<Guid>(), It.IsAny<string>()))
+            .Returns((true, (string?)null));
+
+        var request = new AddLibraryMirrorRequest
+        {
+            SourceLibraryId = sourceLibraryId.ToString(),
+            TargetPath = "/data/portuguese/movies",
+            TargetLibraryName = "Filmes"
+        };
+
+        // Act
+        await _controller.AddLibraryMirror(alternativeId, request, CancellationToken.None);
+
+        // Assert - unmanaged user should NOT be updated
+        _libraryAccessServiceMock.Verify(
+            s => s.UpdateUserLibraryAccessAsync(unmanagedUserId, It.IsAny<CancellationToken>()),
+            Times.Never,
+            "Should NOT update access for unmanaged user");
+    }
+
+    #endregion
+
+    #region CleanupOrphanedMirrors
+
+    [Fact]
+    public async Task CleanupOrphanedMirrors_NoOrphans_ReturnsZeroCleaned()
+    {
+        // Arrange - create a mirror with matching libraries
+        var sourceLibraryId = Guid.NewGuid();
+        var mirrorLibraryId = Guid.NewGuid();
+        var alternative = new LanguageAlternative
+        {
+            Id = Guid.NewGuid(),
+            Name = "Portuguese",
+            MirroredLibraries = new List<LibraryMirror>
+            {
+                new LibraryMirror
+                {
+                    Id = Guid.NewGuid(),
+                    SourceLibraryId = sourceLibraryId,
+                    TargetLibraryId = mirrorLibraryId,
+                    TargetLibraryName = "Filmes",
+                    TargetPath = "/data/filmes"
+                }
+            }
+        };
+        _context.Configuration.LanguageAlternatives.Add(alternative);
+
+        // Both source and target libraries exist
+        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
+            .Returns(new List<LibraryInfo>
+            {
+                new LibraryInfo { Id = sourceLibraryId, Name = "Movies" },
+                new LibraryInfo { Id = mirrorLibraryId, Name = "Filmes" }
+            });
+
+        // Act
+        var result = await _controller.CleanupOrphanedMirrors(CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var cleanupResult = okResult.Value.Should().BeOfType<CleanupResult>().Subject;
+        cleanupResult.TotalCleaned.Should().Be(0);
+        cleanupResult.CleanedUpMirrors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CleanupOrphanedMirrors_SourceDeleted_RemovesMirrorAndDeletesFiles()
+    {
+        // Arrange - create a mirror with missing source library
+        var sourceLibraryId = Guid.NewGuid();
+        var mirrorLibraryId = Guid.NewGuid();
+        var mirrorPath = "/data/filmes";
+        var alternative = new LanguageAlternative
+        {
+            Id = Guid.NewGuid(),
+            Name = "Portuguese",
+            MirroredLibraries = new List<LibraryMirror>
+            {
+                new LibraryMirror
+                {
+                    Id = Guid.NewGuid(),
+                    SourceLibraryId = sourceLibraryId,
+                    TargetLibraryId = mirrorLibraryId,
+                    TargetLibraryName = "Filmes",
+                    TargetPath = mirrorPath
+                }
+            }
+        };
+        _context.Configuration.LanguageAlternatives.Add(alternative);
+
+        // Only mirror library exists (source was deleted)
+        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
+            .Returns(new List<LibraryInfo>
+            {
+                new LibraryInfo { Id = mirrorLibraryId, Name = "Filmes" }
+            });
+
+        // Act
+        var result = await _controller.CleanupOrphanedMirrors(CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var cleanupResult = okResult.Value.Should().BeOfType<CleanupResult>().Subject;
+        cleanupResult.TotalCleaned.Should().Be(1);
+        cleanupResult.CleanedUpMirrors.Should().Contain(m => m.Contains("source library deleted"));
+
+        // Verify DeleteMirrorAsync was called with deleteFiles: true
+        _mirrorServiceMock.Verify(
+            s => s.DeleteMirrorAsync(
+                It.IsAny<LibraryMirror>(),
+                false, // deleteLibrary
+                true,  // deleteFiles - should be true when source deleted
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CleanupOrphanedMirrors_MirrorLibraryDeleted_RemovesMirrorButKeepsSourceFiles()
+    {
+        // Arrange - create a mirror with missing target library
+        var sourceLibraryId = Guid.NewGuid();
+        var mirrorLibraryId = Guid.NewGuid();
+        var alternative = new LanguageAlternative
+        {
+            Id = Guid.NewGuid(),
+            Name = "Portuguese",
+            MirroredLibraries = new List<LibraryMirror>
+            {
+                new LibraryMirror
+                {
+                    Id = Guid.NewGuid(),
+                    SourceLibraryId = sourceLibraryId,
+                    TargetLibraryId = mirrorLibraryId, // This library is "deleted"
+                    TargetLibraryName = "Filmes",
+                    TargetPath = "/data/filmes"
+                }
+            }
+        };
+        _context.Configuration.LanguageAlternatives.Add(alternative);
+
+        // Only source library exists (mirror library was deleted)
+        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
+            .Returns(new List<LibraryInfo>
+            {
+                new LibraryInfo { Id = sourceLibraryId, Name = "Movies" }
+            });
+
+        // Act
+        var result = await _controller.CleanupOrphanedMirrors(CancellationToken.None);
+
+        // Assert
+        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var cleanupResult = okResult.Value.Should().BeOfType<CleanupResult>().Subject;
+        cleanupResult.TotalCleaned.Should().Be(1);
+        cleanupResult.CleanedUpMirrors.Should().Contain(m => m.Contains("mirror library deleted"));
+
+        // Verify DeleteMirrorAsync was called with deleteFiles: false
+        _mirrorServiceMock.Verify(
+            s => s.DeleteMirrorAsync(
+                It.IsAny<LibraryMirror>(),
+                false, // deleteLibrary
+                false, // deleteFiles - should be false when only mirror deleted
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CleanupOrphanedMirrors_ReconciliesUserAccessAfterCleanup()
+    {
+        // Arrange - create a mirror with missing source library
+        var sourceLibraryId = Guid.NewGuid();
+        var alternative = new LanguageAlternative
+        {
+            Id = Guid.NewGuid(),
+            Name = "Portuguese",
+            MirroredLibraries = new List<LibraryMirror>
+            {
+                new LibraryMirror
+                {
+                    Id = Guid.NewGuid(),
+                    SourceLibraryId = sourceLibraryId,
+                    TargetLibraryName = "Filmes",
+                    TargetPath = "/data/filmes"
+                }
+            }
+        };
+        _context.Configuration.LanguageAlternatives.Add(alternative);
+
+        // Source library doesn't exist
+        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
+            .Returns(new List<LibraryInfo>());
+
+        // Act
+        await _controller.CleanupOrphanedMirrors(CancellationToken.None);
+
+        // Assert - user access reconciliation was called
+        _libraryAccessServiceMock.Verify(
+            s => s.ReconcileAllUsersAsync(It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CleanupOrphanedMirrors_NoOrphans_DoesNotReconcileUsers()
+    {
+        // Arrange - no alternatives, no orphans
+        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
+            .Returns(new List<LibraryInfo>());
+
+        // Act
+        await _controller.CleanupOrphanedMirrors(CancellationToken.None);
+
+        // Assert - no reconciliation needed
+        _libraryAccessServiceMock.Verify(
+            s => s.ReconcileAllUsersAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    #endregion
 }
 
 /// <summary>
