@@ -29,13 +29,11 @@ jobs:
           dotnet-target: "net8.0"
           path: Jellyfin.Plugin.MultiLang
 
-      - name: Upload Artifacts
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact
-          path: |
-             ${{ steps.jprm.outputs.artifact }}
-             manifest.json
+          path: ${{ steps.jprm.outputs.artifact }}
 
   release:
     needs: build
@@ -44,14 +42,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Artifacts
+      - name: Download Artifact
         uses: actions/download-artifact@v4
         with:
           name: build-artifact
           path: dist
 
+      - name: Generate manifest.json
+        run: |
+          # Find the zip file
+          ZIP_FILE=$(ls dist/*.zip | head -1)
+          ZIP_NAME=$(basename "$ZIP_FILE")
+          
+          # Extract meta.json from the zip
+          unzip -p "$ZIP_FILE" meta.json > meta.json
+          
+          # Calculate MD5 checksum
+          CHECKSUM=$(md5sum "$ZIP_FILE" | cut -d' ' -f1)
+          
+          # Get download URL
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${ZIP_NAME}"
+          
+          # Generate manifest.json using jq
+          jq --arg url "$DOWNLOAD_URL" --arg checksum "$CHECKSUM" '
+            [{
+              guid: .guid,
+              name: .name,
+              overview: .overview,
+              description: .description,
+              owner: .owner,
+              category: .category,
+              versions: [{
+                version: .version,
+                changelog: .changelog,
+                targetAbi: .targetAbi,
+                sourceUrl: $url,
+                checksum: $checksum,
+                timestamp: .timestamp
+              }]
+            }]
+          ' meta.json > manifest.json
+          
+          echo "Generated manifest.json:"
+          cat manifest.json
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/*.zip
+            manifest.json
           generate_release_notes: true
