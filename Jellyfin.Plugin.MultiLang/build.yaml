@@ -1,0 +1,26 @@
+---
+name: "Multi-Language Library"
+guid: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+version: "1.0.0.0"
+targetAbi: "10.10.0.0"
+framework: "net8.0"
+owner: "jellyfin-multi-lang"
+overview: "Enables multi-language metadata support through library mirroring with hardlinks."
+description: |
+  Create language-specific library mirrors using hardlinks to provide different metadata 
+  languages to different users without duplicating storage. Supports LDAP integration for 
+  automatic language assignment based on group membership.
+category: "General"
+artifacts:
+  - "Jellyfin.Plugin.MultiLang.dll"
+changelog: |
+  ## v1.0.0.0
+  - Initial release
+  - Library mirroring with hardlinks
+  - User language assignment
+  - LDAP group integration
+  - Real-time file watching
+  - Scheduled sync tasks
+url: https://github.com/maronato/jellyfin-multi-lang
+
+
