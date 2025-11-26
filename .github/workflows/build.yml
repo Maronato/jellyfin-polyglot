@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - main
     tags:
       - 'v*'
   pull_request:
@@ -53,12 +54,27 @@ jobs:
           name: build-artifact
           path: ${{ steps.jprm.outputs.artifact }}
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run Tests
+        run: dotnet test Jellyfin.Plugin.MultiLang.Tests/Jellyfin.Plugin.MultiLang.Tests.csproj --verbosity normal
+
   release:
-    needs: build
+    needs: [build, test]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download Artifact
         uses: actions/download-artifact@v4
@@ -66,29 +82,126 @@ jobs:
           name: build-artifact
           path: dist
 
+      - name: Set version info
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          IFS='.' read -ra PARTS <<< "$TAG_VERSION"
+          while [ ${#PARTS[@]} -lt 4 ]; do
+            PARTS+=("0")
+          done
+          VERSION="${PARTS[0]}.${PARTS[1]}.${PARTS[2]}.${PARTS[3]}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "TAG_NAME=${{ github.ref_name }}" >> $GITHUB_ENV
+
+      - name: Fetch all tags
+        run: |
+          git fetch --tags --force
+          echo "All tags:"
+          git tag -l --sort=-creatordate | head -10
+
       - name: Generate release notes
         id: release_notes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Get the previous tag
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          CURRENT_TAG="${{ github.ref_name }}"
+          echo "Current tag: $CURRENT_TAG"
           
-          # Generate release notes using GitHub API
+          # Get the previous tag (second newest tag, excluding current)
+          PREV_TAG=$(git tag -l --sort=-creatordate | grep -v "^${CURRENT_TAG}$" | head -1 || echo "")
+          echo "Previous tag: $PREV_TAG"
+          
+          # Generate release notes
           if [ -n "$PREV_TAG" ]; then
+            echo "Generating release notes from $PREV_TAG to $CURRENT_TAG"
             NOTES=$(gh api repos/${{ github.repository }}/releases/generate-notes \
-              -f tag_name="${{ github.ref_name }}" \
+              -f tag_name="$CURRENT_TAG" \
               -f previous_tag_name="$PREV_TAG" \
-              --jq '.body' 2>/dev/null || echo "Release ${{ github.ref_name }}")
+              --jq '.body' 2>&1) || NOTES=""
+            
+            if [ -z "$NOTES" ] || [[ "$NOTES" == *"error"* ]]; then
+              echo "GitHub API failed, generating manual changelog"
+              NOTES="## What's Changed
+
+          $(git log ${PREV_TAG}..${CURRENT_TAG} --pretty=format:'* %s (%h)' --no-merges 2>/dev/null || echo "* Various improvements and bug fixes")
+
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${CURRENT_TAG}"
+            fi
           else
-            NOTES="Initial release ${{ github.ref_name }}"
+            echo "No previous tag found, this is the initial release"
+            NOTES="## Initial Release
+
+          First release of the Multi-Language Library plugin for Jellyfin.
+
+          ### Features
+          - Create language-specific library mirrors using hardlinks
+          - Automatic user library access management based on language assignment
+          - LDAP integration for automatic language assignment
+          - Scheduled sync tasks for mirror maintenance"
           fi
           
-          # Escape for JSON (replace newlines, quotes)
+          echo "Generated release notes:"
+          echo "$NOTES"
+          
+          # Save to file for later use
+          echo "$NOTES" > release_notes.txt
+          
+          # Also save escaped version for JSON
           NOTES_ESCAPED=$(echo "$NOTES" | jq -Rs .)
           echo "RELEASE_NOTES=$NOTES_ESCAPED" >> $GITHUB_ENV
 
-      - name: Generate manifest.json
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          body_path: release_notes.txt
+
+  update-manifest:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifact
+          path: dist
+
+      - name: Set version info
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          IFS='.' read -ra PARTS <<< "$TAG_VERSION"
+          while [ ${#PARTS[@]} -lt 4 ]; do
+            PARTS+=("0")
+          done
+          VERSION="${PARTS[0]}.${PARTS[1]}.${PARTS[2]}.${PARTS[3]}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Fetch all tags
+        run: |
+          git fetch --tags --force
+
+      - name: Get release notes from GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get the release notes from the actual GitHub release (already created)
+          NOTES=$(gh api repos/${{ github.repository }}/releases/tags/${{ github.ref_name }} --jq '.body' 2>/dev/null || echo "")
+          
+          if [ -z "$NOTES" ]; then
+            NOTES="Release ${{ github.ref_name }}"
+          fi
+          
+          NOTES_ESCAPED=$(echo "$NOTES" | jq -Rs .)
+          echo "RELEASE_NOTES=$NOTES_ESCAPED" >> $GITHUB_ENV
+
+      - name: Update manifest.json and build.yaml in main branch
         run: |
           # Find the zip file
           ZIP_FILE=$(ls dist/*.zip | head -1)
@@ -103,35 +216,75 @@ jobs:
           # Get download URL
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${ZIP_NAME}"
           
-          # Generate manifest.json using jq, replacing changelog with release notes
-          jq --arg url "$DOWNLOAD_URL" \
-             --arg checksum "$CHECKSUM" \
-             --argjson changelog "$RELEASE_NOTES" '
-            [{
-              guid: .guid,
-              name: .name,
-              overview: .overview,
-              description: .description,
-              owner: .owner,
-              category: .category,
-              versions: [{
-                version: .version,
-                changelog: $changelog,
-                targetAbi: .targetAbi,
-                sourceUrl: $url,
-                checksum: $checksum,
-                timestamp: .timestamp
-              }]
-            }]
-          ' meta.json > manifest.json
+          # Update build.yaml with the released version
+          sed -i "s/^version: .*/version: \"$VERSION\"/" Jellyfin.Plugin.MultiLang/build.yaml
+          echo "Updated build.yaml to version $VERSION"
           
-          echo "Generated manifest.json:"
+          # Create new version entry
+          jq -n --arg url "$DOWNLOAD_URL" \
+                --arg checksum "$CHECKSUM" \
+                --arg version "$VERSION" \
+                --argjson changelog "$RELEASE_NOTES" \
+                --slurpfile meta meta.json '
+            {
+              version: $version,
+              changelog: $changelog,
+              targetAbi: $meta[0].targetAbi,
+              sourceUrl: $url,
+              checksum: $checksum,
+              timestamp: $meta[0].timestamp
+            }
+          ' > new_version.json
+          
+          # Check if manifest.json exists
+          if [ -f manifest.json ]; then
+            # Add new version to existing manifest (prepend to versions array)
+            jq --slurpfile new new_version.json '
+              .[0].versions = [$new[0]] + .[0].versions
+            ' manifest.json > manifest_updated.json
+            mv manifest_updated.json manifest.json
+          else
+            # Create new manifest from meta.json
+            jq --arg url "$DOWNLOAD_URL" \
+               --arg checksum "$CHECKSUM" \
+               --arg repoUrl "https://github.com/${{ github.repository }}" \
+               --argjson changelog "$RELEASE_NOTES" '
+              [{
+                guid: .guid,
+                name: .name,
+                overview: .overview,
+                description: .description,
+                owner: .owner,
+                category: .category,
+                repositoryUrl: $repoUrl,
+                versions: [{
+                  version: .version,
+                  changelog: $changelog,
+                  targetAbi: .targetAbi,
+                  sourceUrl: $url,
+                  checksum: $checksum,
+                  timestamp: .timestamp
+                }]
+              }]
+            ' meta.json > manifest.json
+          fi
+          
+          # Clean up
+          rm -f meta.json new_version.json
+          
+          echo "Updated manifest.json:"
           cat manifest.json
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*.zip
-            manifest.json
-          generate_release_notes: true
+      - name: Commit and push updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add manifest.json Jellyfin.Plugin.MultiLang/build.yaml
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update manifest.json and build.yaml for ${{ github.ref_name }}"
+            git push origin main
+          fi

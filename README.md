@@ -29,13 +29,32 @@ A Jellyfin plugin that enables multi-language metadata support through library m
 
 ## Installation
 
-1. Download the latest release from the releases page
-2. Extract the DLL to your Jellyfin plugins directory:
+### From Plugin Repository (Recommended)
+
+1. In Jellyfin, go to **Dashboard → Plugins → Repositories**
+2. Click **Add** and enter:
+    - **Repository Name:** `Multi-Language Library`
+    - **Repository URL:**
+        ```
+        https://raw.githubusercontent.com/Maronato/jellyfin-multi-lang/main/manifest.json
+        ```
+3. Click **Save**
+4. Go to **Catalog** and find "Multi-Language Library"
+5. Click **Install**
+6. Restart Jellyfin Server
+
+### Manual Installation
+
+1. Download the latest `.zip` from the [releases page](https://github.com/Maronato/jellyfin-multi-lang/releases)
+2. Extract to your Jellyfin plugins directory:
     - Linux: `/var/lib/jellyfin/plugins/MultiLang/`
     - Windows: `%APPDATA%\Jellyfin\Server\plugins\MultiLang\`
-    - Docker: Mount to `/config/plugins/MultiLang/`
+    - Docker: `/config/plugins/MultiLang/`
 3. Restart Jellyfin Server
-4. Access the plugin settings from Dashboard → Plugins → Multi-Language Library
+
+### After Installation
+
+Access the plugin settings from **Dashboard → Plugins → Multi-Language Library**
 
 ## Configuration
 
