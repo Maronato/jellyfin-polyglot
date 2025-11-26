@@ -1,0 +1,61 @@
+# EditorConfig for Jellyfin.Plugin.MultiLang
+# https://editorconfig.org
+
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.cs]
+# Code style
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_prefer_braces = true:suggestion
+
+# Analyzer suppressions for plugin context
+# CA1724: Type name Plugin conflicts with namespace - standard Jellyfin plugin pattern
+dotnet_diagnostic.CA1724.severity = none
+
+# CA1848: Use LoggerMessage delegates - nice-to-have perf optimization, not critical for plugins
+dotnet_diagnostic.CA1848.severity = none
+
+# CA2007: ConfigureAwait - not needed in ASP.NET Core context
+dotnet_diagnostic.CA2007.severity = none
+
+# CA1031: Catch more specific exceptions - intentional for resilience in file operations
+dotnet_diagnostic.CA1031.severity = suggestion
+
+# CA1822: Can be static - minor style preference
+dotnet_diagnostic.CA1822.severity = suggestion
+
+# CA1307: Use StringComparison - minor style preference  
+dotnet_diagnostic.CA1307.severity = suggestion
+
+# CA1310: Specify StringComparison for correctness - minor style preference
+dotnet_diagnostic.CA1310.severity = suggestion
+
+# CA1852: Type can be sealed - minor style preference
+dotnet_diagnostic.CA1852.severity = suggestion
+
+# CA1861: Prefer static readonly for constant arrays - minor perf optimization
+dotnet_diagnostic.CA1861.severity = suggestion
+
+# CA1062: Validate parameter is non-null - good practice but noisy for internal code
+dotnet_diagnostic.CA1062.severity = suggestion
+
+# CA2101: Specify marshaling for P/Invoke - safe for our hardlink usage
+dotnet_diagnostic.CA2101.severity = none
+
+# CA5392: Use DefaultDllImportSearchPaths for P/Invoke - safe for system libc calls
+dotnet_diagnostic.CA5392.severity = none
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+

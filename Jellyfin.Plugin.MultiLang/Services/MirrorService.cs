@@ -20,7 +20,6 @@ public class MirrorService : IMirrorService
 {
     private readonly ILibraryManager _libraryManager;
     private readonly ILogger<MirrorService> _logger;
-    private readonly SemaphoreSlim _syncLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _mirrorLocks = new();
 
     /// <summary>
