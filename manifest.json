@@ -9,6 +9,14 @@
     "repositoryUrl": "https://github.com/Maronato/jellyfin-multi-lang",
     "versions": [
       {
+        "version": "0.2.3.0",
+        "changelog": "**Full Changelog**: https://github.com/Maronato/jellyfin-multi-lang/compare/v0.2.2...v0.2.3\n",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/Maronato/jellyfin-multi-lang/releases/download/v0.2.3/multi-language-library_0.2.3.0.zip",
+        "checksum": "313f9cd0ac8d74461242dfc9bc5d0d1e",
+        "timestamp": "2025-11-26T20:11:49Z"
+      },
+      {
         "version": "0.2.2.0",
         "changelog": "**Full Changelog**: https://github.com/Maronato/jellyfin-multi-lang/compare/v0.2.1...v0.2.2\n",
         "targetAbi": "10.10.0.0",
