@@ -22,6 +22,24 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          # Extract version from tag (v0.0.5 -> 0.0.5.0)
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          # Ensure 4-part version (add .0 if needed)
+          IFS='.' read -ra PARTS <<< "$TAG_VERSION"
+          while [ ${#PARTS[@]} -lt 4 ]; do
+            PARTS+=("0")
+          done
+          VERSION="${PARTS[0]}.${PARTS[1]}.${PARTS[2]}.${PARTS[3]}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          
+          # Update build.yaml with the version from tag
+          sed -i "s/^version: .*/version: \"$VERSION\"/" Jellyfin.Plugin.MultiLang/build.yaml
+          echo "Updated build.yaml to version $VERSION"
+          cat Jellyfin.Plugin.MultiLang/build.yaml
+
       - name: Build Plugin
         id: jprm
         uses: oddstr13/jellyfin-plugin-repository-manager@v1.1.1
