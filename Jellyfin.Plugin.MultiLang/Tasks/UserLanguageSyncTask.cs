@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.MultiLang.Services;
+using Jellyfin.Plugin.Polyglot.Services;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 
-namespace Jellyfin.Plugin.MultiLang.Tasks;
+namespace Jellyfin.Plugin.Polyglot.Tasks;
 
 /// <summary>
 /// Scheduled task that reconciles user library access with their language assignments.

@@ -1,13 +1,13 @@
 using FluentAssertions;
-using Jellyfin.Plugin.MultiLang.Services;
-using Jellyfin.Plugin.MultiLang.Tasks;
-using Jellyfin.Plugin.MultiLang.Tests.TestHelpers;
+using Jellyfin.Plugin.Polyglot.Services;
+using Jellyfin.Plugin.Polyglot.Tasks;
+using Jellyfin.Plugin.Polyglot.Tests.TestHelpers;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
-namespace Jellyfin.Plugin.MultiLang.Tests.Tasks;
+namespace Jellyfin.Plugin.Polyglot.Tests.Tasks;
 
 /// <summary>
 /// Tests for MirrorSyncTask.

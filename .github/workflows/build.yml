@@ -37,16 +37,16 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           
           # Update build.yaml with the version from tag
-          sed -i "s/^version: .*/version: \"$VERSION\"/" Jellyfin.Plugin.MultiLang/build.yaml
+          sed -i "s/^version: .*/version: \"$VERSION\"/" Jellyfin.Plugin.Polyglot/build.yaml
           echo "Updated build.yaml to version $VERSION"
-          cat Jellyfin.Plugin.MultiLang/build.yaml
+          cat Jellyfin.Plugin.Polyglot/build.yaml
 
       - name: Build Plugin
         id: jprm
         uses: oddstr13/jellyfin-plugin-repository-manager@v1.1.1
         with:
           dotnet-target: "net8.0"
-          path: Jellyfin.Plugin.MultiLang
+          path: Jellyfin.Plugin.Polyglot
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -65,7 +65,7 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Run Tests
-        run: dotnet test Jellyfin.Plugin.MultiLang.Tests/Jellyfin.Plugin.MultiLang.Tests.csproj --verbosity normal
+        run: dotnet test Jellyfin.Plugin.Polyglot.Tests/Jellyfin.Plugin.Polyglot.Tests.csproj --verbosity normal
 
   release:
     needs: [build, test]
@@ -131,7 +131,7 @@ jobs:
             echo "No previous tag found, this is the initial release"
             NOTES="## Initial Release
 
-          First release of the Multi-Language Library plugin for Jellyfin.
+          First release of the Polyglot plugin for Jellyfin.
 
           ### Features
           - Create language-specific library mirrors using hardlinks
@@ -217,7 +217,7 @@ jobs:
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${ZIP_NAME}"
           
           # Update build.yaml with the released version
-          sed -i "s/^version: .*/version: \"$VERSION\"/" Jellyfin.Plugin.MultiLang/build.yaml
+          sed -i "s/^version: .*/version: \"$VERSION\"/" Jellyfin.Plugin.Polyglot/build.yaml
           echo "Updated build.yaml to version $VERSION"
           
           # Create new version entry
@@ -280,7 +280,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          git add manifest.json Jellyfin.Plugin.MultiLang/build.yaml
+          git add manifest.json Jellyfin.Plugin.Polyglot/build.yaml
           
           if git diff --staged --quiet; then
             echo "No changes to commit"

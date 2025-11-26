@@ -1,138 +1,268 @@
-# Jellyfin Multi-Language Library Plugin
+# Polyglot
 
-> **Note:** This repository was entirely written by AI and shouldn't be used in production before a stable 1.0 version is released.
+**Serve your Jellyfin library in multiple languages—without duplicating a single file.**
 
-A Jellyfin plugin that enables multi-language metadata support through library mirroring with hardlinks.
+> ⚠️ **Pre-release Software**: This plugin was developed with AI assistance and is not yet production-ready. Use at your own risk until v1.0 is released.
+
+---
+
+## The Problem
+
+Jellyfin supports only **one metadata language per library**. If your household includes English, Portuguese, and Spanish speakers, everyone sees the same movie titles, descriptions, and artwork—in whatever language you configured.
+
+## The Solution
+
+Polyglot creates **language-specific "mirror" libraries** using filesystem hardlinks. Your media files stay exactly where they are (zero storage duplication), but each language gets its own library with native metadata.
+
+```
+/media/movies/                    ← Your original library (English metadata)
+    Inception (2010)/
+        Inception.mkv
+
+/media/polyglot/portuguese/movies/  ← Mirror library (Portuguese metadata)
+    Inception (2010)/
+        Inception.mkv  ────────────→ [hardlink to original]
+```
+
+Users are then assigned to their preferred language. A Portuguese user sees only the Portuguese library; an English user sees the original. Same files, different metadata, seamless experience.
+
+---
 
 ## Features
 
--   **Library Mirroring**: Create language-specific copies of your libraries using hardlinks (no storage duplication)
--   **Per-User Language Assignment**: Control which libraries users see based on their assigned language
--   **LDAP Integration**: Automatically assign languages to users based on LDAP group membership
--   **Real-Time Sync**: FileSystemWatcher monitors source libraries and updates mirrors automatically
--   **Scheduled Tasks**: Periodic sync and user reconciliation tasks
+| Feature                       | Description                                                                        |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| **Zero-Copy Mirroring**       | Hardlinks share the actual file data—mirrors consume negligible disk space         |
+| **Per-User Language Control** | Each user sees only libraries matching their assigned language                     |
+| **Automatic Sync**            | Mirrors update automatically after library scans and on a configurable schedule    |
+| **LDAP Integration**          | Auto-assign languages based on LDAP/Active Directory group membership              |
+| **Preference Sync**           | Optionally sync subtitle and audio language preferences to match                   |
+| **Clean Separation**          | Only media files (video, audio, subtitles) are mirrored—metadata stays independent |
 
-## How It Works
-
-1. **Create Language Alternatives**: Define language configurations with a name, locale code (e.g., "pt-BR"), and destination path
-2. **Add Library Mirrors**: For each language, select which source libraries to mirror
-3. **Hardlink Creation**: The plugin creates hardlinks for media files (video, audio, subtitles) while excluding metadata files (NFO, images)
-4. **Jellyfin Library Creation**: A new Jellyfin library is created pointing to the mirror with the appropriate metadata language settings
-5. **User Assignment**: Assign users to language alternatives to control their library access
+---
 
 ## Requirements
 
--   Jellyfin Server 10.10.x or higher
--   .NET 8.0 Runtime
--   **Source and mirror paths must be on the same filesystem** (hardlinks cannot cross filesystems)
--   Appropriate filesystem permissions for the Jellyfin process
+-   **Jellyfin Server** 10.10.x or higher
+-   **Same Filesystem**: Source and mirror paths must be on the same filesystem (hardlinks cannot cross mount points)
+-   **Write Permissions**: Jellyfin must have write access to the mirror destination path
+
+---
 
 ## Installation
 
-### From Plugin Repository (Recommended)
+### Plugin Repository (Recommended)
 
-1. In Jellyfin, go to **Dashboard → Plugins → Repositories**
+1. Go to **Dashboard → Plugins → Repositories**
 2. Click **Add** and enter:
-    - **Repository Name:** `Multi-Language Library`
-    - **Repository URL:**
-        ```
-        https://raw.githubusercontent.com/Maronato/jellyfin-multi-lang/main/manifest.json
-        ```
-3. Click **Save**
-4. Go to **Catalog** and find "Multi-Language Library"
-5. Click **Install**
-6. Restart Jellyfin Server
+    - **Name**: `Polyglot`
+    - **URL**: `https://raw.githubusercontent.com/Maronato/jellyfin-polyglot/main/manifest.json`
+3. Go to **Catalog**, find **Polyglot**, and click **Install**
+4. Restart Jellyfin
 
 ### Manual Installation
 
-1. Download the latest `.zip` from the [releases page](https://github.com/Maronato/jellyfin-multi-lang/releases)
-2. Extract to your Jellyfin plugins directory:
-    - Linux: `/var/lib/jellyfin/plugins/MultiLang/`
-    - Windows: `%APPDATA%\Jellyfin\Server\plugins\MultiLang\`
-    - Docker: `/config/plugins/MultiLang/`
-3. Restart Jellyfin Server
+1. Download the latest release from the [Releases page](https://github.com/Maronato/jellyfin-polyglot/releases)
+2. Extract to your plugins directory:
+    - **Linux**: `/var/lib/jellyfin/plugins/Polyglot/`
+    - **Windows**: `%APPDATA%\Jellyfin\Server\plugins\Polyglot\`
+    - **Docker**: `/config/plugins/Polyglot/`
+3. Restart Jellyfin
 
-### After Installation
+---
 
-Access the plugin settings from **Dashboard → Plugins → Multi-Language Library**
+## Quick Start
 
-## Configuration
+### 1. Create a Language Alternative
+
+A "language alternative" defines a target language and where its mirror libraries will live.
+
+1. Go to **Dashboard → Plugins → Polyglot**
+2. In the **Languages** tab, click the **+** button
+3. Fill in:
+    - **Name**: e.g., "Portuguese"
+    - **Language**: Select from dropdown (e.g., Portuguese)
+    - **Country**: Optional region (e.g., BR for Brazilian Portuguese)
+    - **Destination Path**: e.g., `/media/polyglot/portuguese`
+4. Click **Create**
+
+### 2. Add Library Mirrors
+
+For each source library you want available in this language:
+
+1. Click the **+** button on your language alternative
+2. Select the source library (e.g., "Movies")
+3. The target path auto-fills based on your base path
+4. Click **Create Mirror**
+
+The plugin will:
+
+-   Create hardlinks for all media files
+-   Create a new Jellyfin library with the correct metadata language
+-   Trigger an initial library scan
+
+### 3. Assign Users
+
+1. Go to the **Users** tab
+2. For each user, select their language from the dropdown:
+    - **Not managed**: Plugin doesn't control this user's library access
+    - **Default libraries**: User sees original/source libraries only
+    - **[Language name]**: User sees only that language's mirrors
+
+---
+
+## Configuration Reference
 
 ### Languages Tab
 
--   View existing Jellyfin libraries and their metadata settings
--   Create new language alternatives
--   Add library mirrors to each alternative
--   Trigger manual sync operations
+-   View all Jellyfin libraries and their current metadata language
+-   Create/delete language alternatives
+-   Add/remove library mirrors
+-   Manually trigger sync for any alternative
 
 ### Users Tab
 
 -   View all users with their current language assignment
--   Assign languages to users via dropdown
--   Toggle "Manual Override" to prevent LDAP from changing the assignment
-
-> **Warning**: Changing a user's language changes which libraries they can access. Watch history is stored per-library, so users may appear to lose their progress when switching languages.
+-   Assign languages via dropdown
+-   **Enable Plugin for All Users**: Bulk-enable plugin management for every user
 
 ### LDAP Tab
 
--   View LDAP integration status
+_Only visible if the LDAP Authentication plugin is installed._
+
 -   Map LDAP groups to language alternatives
--   Set priority for group mappings (higher wins if user is in multiple groups)
--   Test LDAP connection and user lookup
+-   Set priority for overlapping group memberships
+-   Test LDAP connection and user group lookup
 
 ### Settings Tab
 
--   **Sync Display Language**: Update user's Jellyfin UI language when plugin language changes
--   **Sync Subtitle/Audio Language**: Update user's preferred subtitle/audio language preferences
--   **Enable LDAP Integration**: Automatically assign languages based on LDAP groups
--   **Enable File Watching**: Real-time sync using FileSystemWatcher
--   **Sync Interval**: How often to run the scheduled sync task (default: 6 hours)
+| Setting                    | Description                                                              |
+| -------------------------- | ------------------------------------------------------------------------ |
+| **Sync Display Language**  | Update user's Jellyfin UI language to match their assigned language      |
+| **Sync Subtitle Language** | Set preferred subtitle language to match                                 |
+| **Sync Audio Language**    | Set preferred audio language to match                                    |
+| **Mirror Sync Interval**   | Hours between scheduled sync tasks (also syncs after every library scan) |
 
-## Docker Considerations
+---
 
-When running Jellyfin in Docker, ensure both source and mirror paths are on the same filesystem:
+## Docker Configuration
+
+Hardlinks require source and mirror to be on the **same filesystem**. In Docker, this means they must come from the same volume mount:
 
 ```yaml
+# ✅ Correct: Single mount point
 volumes:
-    # Both must be from the same underlying filesystem for hardlinks to work
-    - /media:/media:rw
+    - /mnt/media:/media:rw
+# Plugin paths:
+#   Source: /media/movies
+#   Mirror: /media/polyglot/portuguese/movies
 ```
 
-Invalid configurations (hardlinks will fail):
+```yaml
+# ❌ Wrong: Separate mounts (hardlinks will fail)
+volumes:
+    - /mnt/movies:/movies:rw
+    - /mnt/mirrors:/mirrors:rw
+```
 
--   Source from one volume, mirrors from another
--   Source as bind mount, mirrors as tmpfs
+---
 
-## API Endpoints
+## How It Works
 
-All endpoints require admin authentication.
+### Hardlink Mirroring
 
-| Method          | Endpoint                                 | Description                 |
-| --------------- | ---------------------------------------- | --------------------------- |
-| GET             | `/MultiLang/Libraries`                   | List Jellyfin libraries     |
-| GET             | `/MultiLang/Alternatives`                | List language alternatives  |
-| POST            | `/MultiLang/Alternatives`                | Create language alternative |
-| DELETE          | `/MultiLang/Alternatives/{id}`           | Delete language alternative |
-| POST            | `/MultiLang/Alternatives/{id}/Libraries` | Add library mirror          |
-| POST            | `/MultiLang/Alternatives/{id}/Sync`      | Trigger sync                |
-| GET             | `/MultiLang/Users`                       | List users with languages   |
-| PUT             | `/MultiLang/Users/{id}/Language`         | Set user language           |
-| GET             | `/MultiLang/LdapStatus`                  | Get LDAP status             |
-| GET/POST/DELETE | `/MultiLang/LdapGroups`                  | Manage LDAP mappings        |
+When you create a mirror, Polyglot:
+
+1. **Walks the source library** directory tree
+2. **Creates hardlinks** for media files (`.mkv`, `.mp4`, `.srt`, `.mp3`, etc.)
+3. **Skips metadata files** (`.nfo`, `.jpg`, `.png`, etc.) and metadata directories (`extrafanart`, `.actors`, etc.)
+4. **Creates the Jellyfin library** with the target language's metadata settings
+
+Because hardlinks point to the same underlying data blocks, the mirror consumes almost no additional storage.
+
+### Automatic Synchronization
+
+Mirrors stay in sync through:
+
+-   **Post-Scan Hook**: After every Jellyfin library scan, all mirrors are synchronized
+-   **Scheduled Task**: Configurable interval (default: 6 hours)
+-   **Orphan Detection**: If you delete a source or mirror library, the plugin detects this and cleans up
+
+### User Library Access
+
+When a user is assigned to a language:
+
+1. Their `EnableAllFolders` permission is disabled
+2. They're granted access to:
+    - Mirror libraries for their assigned language
+    - Source libraries that don't have a mirror in their language
+    - Any non-managed libraries (e.g., "Home Videos")
+3. They lose access to:
+    - Source libraries that have mirrors in their language (they see the mirror instead)
+    - Mirror libraries for other languages
+
+---
+
+## API Reference
+
+All endpoints require admin authentication and are prefixed with `/Polyglot`.
+
+| Method   | Endpoint                                  | Description                                          |
+| -------- | ----------------------------------------- | ---------------------------------------------------- |
+| `GET`    | `/Libraries`                              | List all Jellyfin libraries with metadata info       |
+| `GET`    | `/Alternatives`                           | List all language alternatives                       |
+| `POST`   | `/Alternatives`                           | Create a language alternative                        |
+| `DELETE` | `/Alternatives/{id}`                      | Delete alternative (optionally with libraries/files) |
+| `POST`   | `/Alternatives/{id}/Libraries`            | Add a library mirror                                 |
+| `DELETE` | `/Alternatives/{id}/Libraries/{sourceId}` | Remove a library mirror                              |
+| `POST`   | `/Alternatives/{id}/Sync`                 | Trigger manual sync                                  |
+| `GET`    | `/Users`                                  | List users with language assignments                 |
+| `PUT`    | `/Users/{id}/Language`                    | Set user's language                                  |
+| `POST`   | `/Users/EnableAll`                        | Enable plugin management for all users               |
+| `POST`   | `/Users/{id}/Disable`                     | Disable plugin management for a user                 |
+| `GET`    | `/LdapStatus`                             | Get LDAP integration status                          |
+| `GET`    | `/LdapGroups`                             | List LDAP group mappings                             |
+| `POST`   | `/LdapGroups`                             | Add LDAP group mapping                               |
+| `DELETE` | `/LdapGroups/{id}`                        | Remove LDAP group mapping                            |
+| `POST`   | `/TestLdap`                               | Test LDAP connection                                 |
+| `GET`    | `/Settings`                               | Get plugin settings                                  |
+| `PUT`    | `/Settings`                               | Update plugin settings                               |
+| `POST`   | `/CleanupOrphanedMirrors`                 | Remove mirrors for deleted libraries                 |
+
+---
 
 ## Known Limitations
 
-1. **Watch History**: Jellyfin tracks watch history per `ItemId`, which is unique per library. Switching a user's language will not transfer their watch history.
+### Watch History Doesn't Transfer
 
-2. **Cross-Filesystem**: Hardlinks cannot span filesystems. Source and target paths must be on the same mount.
+Jellyfin tracks watch progress per library item. Since mirror libraries have different item IDs, switching a user's language makes them "lose" their watch history. The history still exists—it's just tied to the original library.
 
-3. **LDAP Plugin Required**: LDAP integration requires the [Jellyfin LDAP Authentication Plugin](https://github.com/jellyfin/jellyfin-plugin-ldapauth) to be installed and configured.
+### Hardlinks Are Filesystem-Bound
+
+Hardlinks cannot cross filesystem boundaries. Your source and mirror paths must be on the same mount. This is a fundamental limitation of how hardlinks work, not a plugin limitation.
+
+### LDAP Requires Separate Plugin
+
+LDAP integration requires the [Jellyfin LDAP Authentication Plugin](https://github.com/jellyfin/jellyfin-plugin-ldapauth) to be installed and configured. Polyglot reads LDAP configuration from that plugin.
+
+---
 
 ## Building from Source
 
 ```bash
-cd Jellyfin.Plugin.MultiLang
+git clone https://github.com/Maronato/jellyfin-polyglot.git
+cd jellyfin-polyglot/Jellyfin.Plugin.Polyglot
 dotnet build --configuration Release
 ```
 
-The compiled DLL will be in `bin/Release/net8.0/`.
+Output: `bin/Release/net8.0/Jellyfin.Plugin.Polyglot.dll`
+
+---
+
+## Contributing
+
+Contributions are welcome! Please open an issue to discuss major changes before submitting a PR.
+
+## License
+
+MIT License—see [LICENSE](LICENSE) for details.
