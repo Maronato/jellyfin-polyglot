@@ -66,6 +66,28 @@ jobs:
           name: build-artifact
           path: dist
 
+      - name: Generate release notes
+        id: release_notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          # Generate release notes using GitHub API
+          if [ -n "$PREV_TAG" ]; then
+            NOTES=$(gh api repos/${{ github.repository }}/releases/generate-notes \
+              -f tag_name="${{ github.ref_name }}" \
+              -f previous_tag_name="$PREV_TAG" \
+              --jq '.body' 2>/dev/null || echo "Release ${{ github.ref_name }}")
+          else
+            NOTES="Initial release ${{ github.ref_name }}"
+          fi
+          
+          # Escape for JSON (replace newlines, quotes)
+          NOTES_ESCAPED=$(echo "$NOTES" | jq -Rs .)
+          echo "RELEASE_NOTES=$NOTES_ESCAPED" >> $GITHUB_ENV
+
       - name: Generate manifest.json
         run: |
           # Find the zip file
@@ -81,8 +103,10 @@ jobs:
           # Get download URL
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${ZIP_NAME}"
           
-          # Generate manifest.json using jq
-          jq --arg url "$DOWNLOAD_URL" --arg checksum "$CHECKSUM" '
+          # Generate manifest.json using jq, replacing changelog with release notes
+          jq --arg url "$DOWNLOAD_URL" \
+             --arg checksum "$CHECKSUM" \
+             --argjson changelog "$RELEASE_NOTES" '
             [{
               guid: .guid,
               name: .name,
@@ -92,7 +116,7 @@ jobs:
               category: .category,
               versions: [{
                 version: .version,
-                changelog: .changelog,
+                changelog: $changelog,
                 targetAbi: .targetAbi,
                 sourceUrl: $url,
                 checksum: $checksum,
