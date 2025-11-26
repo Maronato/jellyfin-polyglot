@@ -1,0 +1,21 @@
+[
+  {
+    "guid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Multi-Language Library",
+    "overview": "Enables multi-language metadata support through library mirroring with hardlinks.",
+    "description": "Create language-specific library mirrors using hardlinks to provide different metadata \nlanguages to different users without duplicating storage. Supports LDAP integration for \nautomatic language assignment based on group membership.\n",
+    "owner": "Maronato",
+    "category": "General",
+    "repositoryUrl": "https://github.com/Maronato/jellyfin-multi-lang",
+    "versions": [
+      {
+        "version": "0.2.0.0",
+        "changelog": "**Full Changelog**: https://github.com/Maronato/jellyfin-multi-lang/compare/v0.1.3...v0.2.0\n",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/Maronato/jellyfin-multi-lang/releases/download/v0.2.0/multi-language-library_0.2.0.0.zip",
+        "checksum": "496a2454f0ad3e9382dc06b70f4afe51",
+        "timestamp": "2025-11-26T15:47:13Z"
+      }
+    ]
+  }
+]
