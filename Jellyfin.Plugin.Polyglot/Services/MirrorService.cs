@@ -289,18 +289,6 @@ public class MirrorService : IMirrorService
                 }
             }
 
-            // Remove from configuration
-            var config = Plugin.Instance?.Configuration;
-            if (config != null)
-            {
-                foreach (var alt in config.LanguageAlternatives)
-                {
-                    alt.MirroredLibraries.RemoveAll(m => m.Id == mirror.Id);
-                }
-
-                SaveConfiguration();
-            }
-
             _mirrorLocks.TryRemove(mirror.Id, out _);
         }
         finally
@@ -392,113 +380,6 @@ public class MirrorService : IMirrorService
     }
 
     /// <inheritdoc />
-    public async Task HandleFileAddedAsync(Guid sourceLibraryId, string filePath, CancellationToken cancellationToken = default)
-    {
-        if (!FileClassifier.ShouldHardlink(filePath))
-        {
-            return;
-        }
-
-        var mirrors = GetMirrorsForSourceLibrary(sourceLibraryId);
-        var sourceLibrary = GetVirtualFolderById(sourceLibraryId);
-
-        if (sourceLibrary?.Locations == null)
-        {
-            return;
-        }
-
-        foreach (var mirror in mirrors)
-        {
-            try
-            {
-                // Find relative path from source
-                string? relativePath = null;
-                foreach (var sourcePath in sourceLibrary.Locations)
-                {
-                    if (filePath.StartsWith(sourcePath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        relativePath = Path.GetRelativePath(sourcePath, filePath);
-                        break;
-                    }
-                }
-
-                if (relativePath != null)
-                {
-                    var targetPath = Path.Combine(mirror.TargetPath, relativePath);
-                    FileSystemHelper.CreateHardLink(filePath, targetPath, _logger);
-                    _logger.LogDebug("Created hardlink for new file: {File}", relativePath);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to handle file added: {File}", filePath);
-            }
-        }
-
-        await Task.CompletedTask.ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async Task HandleFileDeletedAsync(Guid sourceLibraryId, string filePath, CancellationToken cancellationToken = default)
-    {
-        var mirrors = GetMirrorsForSourceLibrary(sourceLibraryId);
-        var sourceLibrary = GetVirtualFolderById(sourceLibraryId);
-
-        if (sourceLibrary?.Locations == null)
-        {
-            return;
-        }
-
-        foreach (var mirror in mirrors)
-        {
-            try
-            {
-                // Find relative path from source
-                string? relativePath = null;
-                foreach (var sourcePath in sourceLibrary.Locations)
-                {
-                    if (filePath.StartsWith(sourcePath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        relativePath = Path.GetRelativePath(sourcePath, filePath);
-                        break;
-                    }
-                }
-
-                if (relativePath != null)
-                {
-                    var targetPath = Path.Combine(mirror.TargetPath, relativePath);
-                    if (File.Exists(targetPath))
-                    {
-                        File.Delete(targetPath);
-                        _logger.LogDebug("Deleted mirrored file: {File}", relativePath);
-
-                        // Clean up empty directories
-                        var dir = Path.GetDirectoryName(targetPath);
-                        if (!string.IsNullOrEmpty(dir))
-                        {
-                            FileSystemHelper.CleanupEmptyDirectories(dir, mirror.TargetPath);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to handle file deleted: {File}", filePath);
-            }
-        }
-
-        await Task.CompletedTask.ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async Task HandleFileRenamedAsync(Guid sourceLibraryId, string oldPath, string newPath, CancellationToken cancellationToken = default)
-    {
-        // Handle as delete + add
-        await HandleFileDeletedAsync(sourceLibraryId, oldPath, cancellationToken).ConfigureAwait(false);
-        await HandleFileAddedAsync(sourceLibraryId, newPath, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
     public IEnumerable<LibraryInfo> GetJellyfinLibraries()
     {
         var virtualFolders = _libraryManager.GetVirtualFolders();
@@ -535,6 +416,107 @@ public class MirrorService : IMirrorService
         }
     }
 
+    /// <inheritdoc />
+    public async Task<OrphanCleanupResult> CleanupOrphanedMirrorsAsync(CancellationToken cancellationToken = default)
+    {
+        var result = new OrphanCleanupResult();
+
+        var config = Plugin.Instance?.Configuration;
+        if (config == null)
+        {
+            return result;
+        }
+
+        var existingLibraryIds = GetJellyfinLibraries()
+            .Select(l => l.Id)
+            .ToHashSet();
+
+        var mirrorsToDelete = new List<(LanguageAlternative Alternative, LibraryMirror Mirror, string Reason)>();
+
+        foreach (var alternative in config.LanguageAlternatives)
+        {
+            foreach (var mirror in alternative.MirroredLibraries)
+            {
+                // Check if source library still exists
+                if (!existingLibraryIds.Contains(mirror.SourceLibraryId))
+                {
+                    _logger.LogWarning(
+                        "Source library {SourceLibraryId} for mirror {MirrorId} no longer exists - will delete mirror",
+                        mirror.SourceLibraryId,
+                        mirror.Id);
+
+                    mirrorsToDelete.Add((alternative, mirror, "source deleted"));
+                    continue;
+                }
+
+                // Check if target library still exists (if it was created)
+                if (mirror.TargetLibraryId.HasValue && !existingLibraryIds.Contains(mirror.TargetLibraryId.Value))
+                {
+                    _logger.LogWarning(
+                        "Target library {TargetLibraryId} for mirror {MirrorId} no longer exists - removing mirror config",
+                        mirror.TargetLibraryId.Value,
+                        mirror.Id);
+
+                    mirrorsToDelete.Add((alternative, mirror, "mirror deleted"));
+                }
+            }
+        }
+
+        // Delete orphaned mirrors
+        foreach (var (alternative, mirror, reason) in mirrorsToDelete)
+        {
+            try
+            {
+                // Delete files only if source was deleted (files are now orphaned)
+                // If only the mirror library was deleted, the source still has the files
+                var deleteFiles = reason == "source deleted";
+
+                // Don't try to delete Jellyfin library - it's already gone
+                await DeleteMirrorAsync(mirror, deleteLibrary: false, deleteFiles: deleteFiles, cancellationToken)
+                    .ConfigureAwait(false);
+
+                // Remove from alternative's mirror list
+                alternative.MirroredLibraries.Remove(mirror);
+
+                result.CleanedUpMirrors.Add($"{mirror.TargetLibraryName} ({reason})");
+
+                // Check if this source now has NO mirrors from any language
+                if (reason == "mirror deleted")
+                {
+                    var sourceHasOtherMirrors = config.LanguageAlternatives
+                        .SelectMany(a => a.MirroredLibraries)
+                        .Any(m => m.SourceLibraryId == mirror.SourceLibraryId);
+
+                    if (!sourceHasOtherMirrors && existingLibraryIds.Contains(mirror.SourceLibraryId))
+                    {
+                        result.SourcesWithoutMirrors.Add(mirror.SourceLibraryId);
+                        _logger.LogInformation(
+                            "Source library {SourceLibraryId} ({SourceName}) has no more mirrors",
+                            mirror.SourceLibraryId,
+                            mirror.SourceLibraryName);
+                    }
+                }
+
+                _logger.LogInformation(
+                    "Removed orphaned mirror {MirrorName} ({Reason})",
+                    mirror.TargetLibraryName,
+                    reason);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to delete orphaned mirror {MirrorId}", mirror.Id);
+            }
+        }
+
+        if (mirrorsToDelete.Count > 0)
+        {
+            SaveConfiguration();
+        }
+
+        result.TotalCleaned = result.CleanedUpMirrors.Count;
+        return result;
+    }
+
     /// <summary>
     /// Mirrors a directory structure with hardlinks.
     /// </summary>
@@ -568,11 +550,16 @@ public class MirrorService : IMirrorService
             yield break;
         }
 
+        // Get configured exclusions or use defaults
+        var config = Plugin.Instance?.Configuration;
+        var excludedExtensions = config?.ExcludedExtensions;
+        var excludedDirectoryNames = config?.ExcludedDirectories;
+
         // Build set of excluded directory paths
         var excludedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var directory in Directory.EnumerateDirectories(path, "*", SearchOption.AllDirectories))
         {
-            if (FileClassifier.ShouldExcludeDirectory(directory))
+            if (FileClassifier.ShouldExcludeDirectory(directory, excludedDirectoryNames))
             {
                 excludedDirs.Add(directory);
             }
@@ -596,7 +583,7 @@ public class MirrorService : IMirrorService
                 }
             }
 
-            if (!isInExcludedDir && FileClassifier.ShouldHardlink(file))
+            if (!isInExcludedDir && FileClassifier.ShouldHardlink(file, excludedExtensions, excludedDirectoryNames))
             {
                 yield return file;
             }
@@ -728,29 +715,6 @@ public class MirrorService : IMirrorService
         // Compare Guids directly - VirtualFolderInfo.ItemId is a string but represents a Guid
         return _libraryManager.GetVirtualFolders()
             .FirstOrDefault(f => Guid.TryParse(f.ItemId, out var folderId) && folderId == id);
-    }
-
-    /// <summary>
-    /// Gets all mirrors that are configured for a source library.
-    /// </summary>
-    private IEnumerable<LibraryMirror> GetMirrorsForSourceLibrary(Guid sourceLibraryId)
-    {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            yield break;
-        }
-
-        foreach (var alt in config.LanguageAlternatives)
-        {
-            foreach (var mirror in alt.MirroredLibraries)
-            {
-                if (mirror.SourceLibraryId == sourceLibraryId)
-                {
-                    yield return mirror;
-                }
-            }
-        }
     }
 
     /// <summary>

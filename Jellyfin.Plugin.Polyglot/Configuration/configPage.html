@@ -139,6 +139,37 @@
                         </div>
 
                         <div class="verticalSection">
+                            <button is="emby-collapse" class="emby-collapse" title="Advanced Settings">
+                                <span class="collapseTitle">Advanced Settings</span>
+                            </button>
+                            <div class="collapseContent" style="display: none;">
+                                <div class="verticalSection" style="margin-top: 1em;">
+                                    <h3 class="sectionTitle">File Exclusions</h3>
+                                    <p class="fieldDescription" style="margin-bottom: 1em;">
+                                        Customize which files and directories are excluded from mirroring. 
+                                        Excluded files will not be hardlinked - typically metadata and images that should be language-specific.
+                                    </p>
+                                    
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="excludedExtensions">Excluded File Extensions</label>
+                                        <textarea id="excludedExtensions" is="emby-textarea" rows="4" style="font-family: monospace;"></textarea>
+                                        <div class="fieldDescription">File extensions to exclude from hardlinking (one per line, include the dot). Default: .nfo, .jpg, .jpeg, .png, .gif, .webp, .tbn, .bmp</div>
+                                    </div>
+                                    
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="excludedDirectories">Excluded Directory Names</label>
+                                        <textarea id="excludedDirectories" is="emby-textarea" rows="4" style="font-family: monospace;"></textarea>
+                                        <div class="fieldDescription">Directory names to exclude from mirroring (one per line). Default: extrafanart, extrathumbs, .trickplay, metadata, .actors</div>
+                                    </div>
+                                    
+                                    <button is="emby-button" type="button" class="raised" id="btnResetExclusions" style="margin-top: 0.5em;">
+                                        <span>Reset to Defaults</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="verticalSection">
                             <h3 class="sectionTitle">Maintenance</h3>
                             <p class="fieldDescription" style="margin-bottom: 1em;">
                                 If you delete a source library or a mirror library manually, the plugin will detect this automatically.
@@ -611,12 +642,16 @@
                             html += '<div class="listItemBodyText">' + (mapping.LdapGroupName || mapping.LdapGroupDn) + '</div>';
                             html += '<div class="listItemBodyText secondary">→ ' + altName + ' (Priority: ' + mapping.Priority + ')</div>';
                             html += '</div>';
-                            html += '<button is="emby-button" type="button" class="fab" onclick="PolyglotConfig.deleteLdapMapping(\'' + mapping.LdapGroupDn + '\')"><span class="material-icons delete"></span></button>';
+                            html += '<button is="emby-button" type="button" class="fab" onclick="PolyglotConfig.deleteLdapMapping(\'' + mapping.Id + '\')"><span class="material-icons delete"></span></button>';
                             html += '</div>';
                         });
                         document.getElementById('ldapMappingsList').innerHTML = html || '<p class="fieldDescription">No LDAP group mappings configured.</p>';
                     });
                 },
+
+                // Default exclusion values (matching the C# defaults)
+                defaultExcludedExtensions: ['.nfo', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.tbn', '.bmp'],
+                defaultExcludedDirectories: ['extrafanart', 'extrathumbs', '.trickplay', 'metadata', '.actors'],
 
                 loadSettings: function() {
                     var self = this;
@@ -626,7 +661,19 @@
                         document.getElementById('syncSubtitleLanguage').checked = config.SyncUserSubtitleLanguage;
                         document.getElementById('syncAudioLanguage').checked = config.SyncUserAudioLanguage;
                         document.getElementById('mirrorSyncInterval').value = config.MirrorSyncIntervalHours || 6;
+                        
+                        // Load exclusion settings
+                        var extensions = config.ExcludedExtensions || self.defaultExcludedExtensions;
+                        var directories = config.ExcludedDirectories || self.defaultExcludedDirectories;
+                        document.getElementById('excludedExtensions').value = extensions.join('\n');
+                        document.getElementById('excludedDirectories').value = directories.join('\n');
                     });
+                },
+                
+                resetExclusionsToDefaults: function() {
+                    document.getElementById('excludedExtensions').value = this.defaultExcludedExtensions.join('\n');
+                    document.getElementById('excludedDirectories').value = this.defaultExcludedDirectories.join('\n');
+                    Dashboard.alert('Exclusion settings reset to defaults. Click "Save Settings" to apply.');
                 },
 
         // Actions
@@ -831,10 +878,10 @@
                     });
                 },
 
-                deleteLdapMapping: function(groupDn) {
+                deleteLdapMapping: function(id) {
                     var self = this;
                     Dashboard.showLoadingMsg();
-                    this.apiDelete('Polyglot/LdapGroups/' + encodeURIComponent(groupDn)).then(function() {
+                    this.apiDelete('Polyglot/LdapGroups/' + id).then(function() {
                         self.loadLdapMappings();
                         Dashboard.hideLoadingMsg();
                     });
@@ -922,6 +969,18 @@
                         config.SyncUserSubtitleLanguage = document.getElementById('syncSubtitleLanguage').checked;
                         config.SyncUserAudioLanguage = document.getElementById('syncAudioLanguage').checked;
                         config.MirrorSyncIntervalHours = parseInt(document.getElementById('mirrorSyncInterval').value) || 6;
+                        
+                        // Parse exclusion settings (split by newlines, filter empty, trim whitespace)
+                        var extensionsText = document.getElementById('excludedExtensions').value;
+                        var directoriesText = document.getElementById('excludedDirectories').value;
+                        
+                        config.ExcludedExtensions = extensionsText.split('\n')
+                            .map(function(s) { return s.trim(); })
+                            .filter(function(s) { return s.length > 0; });
+                        
+                        config.ExcludedDirectories = directoriesText.split('\n')
+                            .map(function(s) { return s.trim(); })
+                            .filter(function(s) { return s.length > 0; });
                         
                         return ApiClient.updatePluginConfiguration(self.pluginUniqueId, config);
                     }).then(function() {
@@ -1049,6 +1108,21 @@
                         self.cleanupOrphanedMirrors();
                     });
 
+                    // Reset exclusions button
+                    document.getElementById('btnResetExclusions').addEventListener('click', function() {
+                        self.resetExclusionsToDefaults();
+                    });
+
+                    // Advanced settings collapse toggle
+                    document.querySelectorAll('.emby-collapse').forEach(function(collapseBtn) {
+                        collapseBtn.addEventListener('click', function() {
+                            var content = this.nextElementSibling;
+                            var isExpanded = content.style.display !== 'none';
+                            content.style.display = isExpanded ? 'none' : 'block';
+                            this.classList.toggle('expanded', !isExpanded);
+                        });
+                    });
+
                     // Test LDAP button
                     document.getElementById('btnTestLdap').addEventListener('click', function() {
                         self.testLdapConnection();
@@ -1129,6 +1203,46 @@
             .emby-tab-button {
                 border-bottom: 3px solid transparent;
                 transition: border-color 0.2s ease, color 0.2s ease;
+            }
+            .emby-collapse {
+                display: flex;
+                align-items: center;
+                width: 100%;
+                padding: 0.8em 1em;
+                background: rgba(255,255,255,0.05);
+                border: 1px solid rgba(255,255,255,0.1);
+                border-radius: 4px;
+                cursor: pointer;
+                text-align: left;
+                font-size: 1em;
+                color: inherit;
+                transition: background 0.2s ease;
+            }
+            .emby-collapse:hover {
+                background: rgba(255,255,255,0.08);
+            }
+            .emby-collapse::before {
+                content: '';
+                display: inline-block;
+                width: 0;
+                height: 0;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid currentColor;
+                margin-right: 0.8em;
+                transform: rotate(-90deg);
+                transition: transform 0.2s ease;
+            }
+            .emby-collapse.expanded::before {
+                transform: rotate(0deg);
+            }
+            .collapseTitle {
+                font-weight: 500;
+            }
+            .collapseContent {
+                border-left: 2px solid rgba(0,164,220,0.3);
+                margin-left: 0.5em;
+                padding-left: 1em;
             }
         </style>
     </div>

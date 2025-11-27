@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.IO;
 using System.Linq;
 using System.Net.Mime;
 using System.Threading;
@@ -101,6 +102,12 @@ public class PolyglotController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.DestinationBasePath))
         {
             return BadRequest("Destination base path is required");
+        }
+
+        // Validate destination base path - must be absolute path
+        if (!Path.IsPathRooted(request.DestinationBasePath))
+        {
+            return BadRequest("Destination base path must be an absolute path");
         }
 
         // Check for duplicate name
@@ -635,68 +642,25 @@ public class PolyglotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<ActionResult<CleanupResult>> CleanupOrphanedMirrors(CancellationToken cancellationToken = default)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
+        var result = await _mirrorService.CleanupOrphanedMirrorsAsync(cancellationToken).ConfigureAwait(false);
+
+        if (result.TotalCleaned > 0)
         {
-            return NotFound();
-        }
-
-        var existingLibraryIds = _mirrorService.GetJellyfinLibraries()
-            .Select(l => l.Id)
-            .ToHashSet();
-
-        var cleanedUp = new List<string>();
-
-        foreach (var alternative in config.LanguageAlternatives.ToList())
-        {
-            var mirrorsToRemove = new List<LibraryMirror>();
-
-            foreach (var mirror in alternative.MirroredLibraries)
+            // Ensure users have access to sources that no longer have mirrors
+            if (result.SourcesWithoutMirrors.Count > 0)
             {
-                var shouldDelete = false;
-                var reason = string.Empty;
-
-                // Check if source library still exists
-                if (!existingLibraryIds.Contains(mirror.SourceLibraryId))
+                var config = Plugin.Instance?.Configuration;
+                if (config != null)
                 {
-                    shouldDelete = true;
-                    reason = "source library deleted";
-                }
-                // Check if target library still exists
-                else if (mirror.TargetLibraryId.HasValue && !existingLibraryIds.Contains(mirror.TargetLibraryId.Value))
-                {
-                    shouldDelete = true;
-                    reason = "mirror library deleted";
-                }
-
-                if (shouldDelete)
-                {
-                    mirrorsToRemove.Add(mirror);
-                    cleanedUp.Add($"{mirror.TargetLibraryName} ({reason})");
-
-                    try
+                    foreach (var userConfig in config.UserLanguages.Where(u => u.IsPluginManaged))
                     {
-                        // Delete files only if source was deleted (files are now orphaned)
-                        var deleteFiles = reason == "source library deleted";
-                        await _mirrorService.DeleteMirrorAsync(mirror, deleteLibrary: false, deleteFiles: deleteFiles, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to delete mirror {MirrorId}", mirror.Id);
+                        await _libraryAccessService.AddLibrariesToUserAccessAsync(
+                            userConfig.UserId,
+                            result.SourcesWithoutMirrors,
+                            cancellationToken).ConfigureAwait(false);
                     }
                 }
             }
-
-            foreach (var mirror in mirrorsToRemove)
-            {
-                alternative.MirroredLibraries.Remove(mirror);
-            }
-        }
-
-        if (cleanedUp.Count > 0)
-        {
-            Plugin.Instance?.SaveConfiguration();
 
             // Reconcile user access after cleanup
             await _libraryAccessService.ReconcileAllUsersAsync(cancellationToken).ConfigureAwait(false);
@@ -704,8 +668,8 @@ public class PolyglotController : ControllerBase
 
         return Ok(new CleanupResult
         {
-            CleanedUpMirrors = cleanedUp,
-            TotalCleaned = cleanedUp.Count
+            CleanedUpMirrors = result.CleanedUpMirrors,
+            TotalCleaned = result.TotalCleaned
         });
     }
 
@@ -908,4 +872,5 @@ public class CleanupResult
 }
 
 #endregion
+
 

@@ -93,8 +93,8 @@ public class UserLanguageSyncTask : IScheduledTask
 
                 try
                 {
-                    // Only reconcile users with language assignments
-                    if (user.AssignedAlternativeId.HasValue)
+                    // Reconcile all plugin-managed users (both with specific language and "Default")
+                    if (user.IsPluginManaged)
                     {
                         var wasReconciled = await _libraryAccessService.ReconcileUserAccessAsync(user.Id, cancellationToken)
                             .ConfigureAwait(false);

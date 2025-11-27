@@ -494,33 +494,12 @@ public class PolyglotControllerTests : IDisposable
     [Fact]
     public async Task CleanupOrphanedMirrors_NoOrphans_ReturnsZeroCleaned()
     {
-        // Arrange - create a mirror with matching libraries
-        var sourceLibraryId = Guid.NewGuid();
-        var mirrorLibraryId = Guid.NewGuid();
-        var alternative = new LanguageAlternative
-        {
-            Id = Guid.NewGuid(),
-            Name = "Portuguese",
-            MirroredLibraries = new List<LibraryMirror>
+        // Arrange - service returns no orphans
+        _mirrorServiceMock.Setup(s => s.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrphanCleanupResult
             {
-                new LibraryMirror
-                {
-                    Id = Guid.NewGuid(),
-                    SourceLibraryId = sourceLibraryId,
-                    TargetLibraryId = mirrorLibraryId,
-                    TargetLibraryName = "Filmes",
-                    TargetPath = "/data/filmes"
-                }
-            }
-        };
-        _context.Configuration.LanguageAlternatives.Add(alternative);
-
-        // Both source and target libraries exist
-        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
-            .Returns(new List<LibraryInfo>
-            {
-                new LibraryInfo { Id = sourceLibraryId, Name = "Movies" },
-                new LibraryInfo { Id = mirrorLibraryId, Name = "Filmes" }
+                TotalCleaned = 0,
+                CleanedUpMirrors = new List<string>()
             });
 
         // Act
@@ -536,33 +515,12 @@ public class PolyglotControllerTests : IDisposable
     [Fact]
     public async Task CleanupOrphanedMirrors_SourceDeleted_RemovesMirrorAndDeletesFiles()
     {
-        // Arrange - create a mirror with missing source library
-        var sourceLibraryId = Guid.NewGuid();
-        var mirrorLibraryId = Guid.NewGuid();
-        var mirrorPath = "/data/filmes";
-        var alternative = new LanguageAlternative
-        {
-            Id = Guid.NewGuid(),
-            Name = "Portuguese",
-            MirroredLibraries = new List<LibraryMirror>
+        // Arrange - service returns cleanup result for source deleted scenario
+        _mirrorServiceMock.Setup(s => s.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrphanCleanupResult
             {
-                new LibraryMirror
-                {
-                    Id = Guid.NewGuid(),
-                    SourceLibraryId = sourceLibraryId,
-                    TargetLibraryId = mirrorLibraryId,
-                    TargetLibraryName = "Filmes",
-                    TargetPath = mirrorPath
-                }
-            }
-        };
-        _context.Configuration.LanguageAlternatives.Add(alternative);
-
-        // Only mirror library exists (source was deleted)
-        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
-            .Returns(new List<LibraryInfo>
-            {
-                new LibraryInfo { Id = mirrorLibraryId, Name = "Filmes" }
+                TotalCleaned = 1,
+                CleanedUpMirrors = new List<string> { "Filmes (source deleted)" }
             });
 
         // Act
@@ -572,47 +530,18 @@ public class PolyglotControllerTests : IDisposable
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var cleanupResult = okResult.Value.Should().BeOfType<CleanupResult>().Subject;
         cleanupResult.TotalCleaned.Should().Be(1);
-        cleanupResult.CleanedUpMirrors.Should().Contain(m => m.Contains("source library deleted"));
-
-        // Verify DeleteMirrorAsync was called with deleteFiles: true
-        _mirrorServiceMock.Verify(
-            s => s.DeleteMirrorAsync(
-                It.IsAny<LibraryMirror>(),
-                false, // deleteLibrary
-                true,  // deleteFiles - should be true when source deleted
-                It.IsAny<CancellationToken>()),
-            Times.Once);
+        cleanupResult.CleanedUpMirrors.Should().Contain(m => m.Contains("source deleted"));
     }
 
     [Fact]
     public async Task CleanupOrphanedMirrors_MirrorLibraryDeleted_RemovesMirrorButKeepsSourceFiles()
     {
-        // Arrange - create a mirror with missing target library
-        var sourceLibraryId = Guid.NewGuid();
-        var mirrorLibraryId = Guid.NewGuid();
-        var alternative = new LanguageAlternative
-        {
-            Id = Guid.NewGuid(),
-            Name = "Portuguese",
-            MirroredLibraries = new List<LibraryMirror>
+        // Arrange - service returns cleanup result for mirror deleted scenario
+        _mirrorServiceMock.Setup(s => s.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrphanCleanupResult
             {
-                new LibraryMirror
-                {
-                    Id = Guid.NewGuid(),
-                    SourceLibraryId = sourceLibraryId,
-                    TargetLibraryId = mirrorLibraryId, // This library is "deleted"
-                    TargetLibraryName = "Filmes",
-                    TargetPath = "/data/filmes"
-                }
-            }
-        };
-        _context.Configuration.LanguageAlternatives.Add(alternative);
-
-        // Only source library exists (mirror library was deleted)
-        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
-            .Returns(new List<LibraryInfo>
-            {
-                new LibraryInfo { Id = sourceLibraryId, Name = "Movies" }
+                TotalCleaned = 1,
+                CleanedUpMirrors = new List<string> { "Filmes (mirror deleted)" }
             });
 
         // Act
@@ -622,43 +551,19 @@ public class PolyglotControllerTests : IDisposable
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var cleanupResult = okResult.Value.Should().BeOfType<CleanupResult>().Subject;
         cleanupResult.TotalCleaned.Should().Be(1);
-        cleanupResult.CleanedUpMirrors.Should().Contain(m => m.Contains("mirror library deleted"));
-
-        // Verify DeleteMirrorAsync was called with deleteFiles: false
-        _mirrorServiceMock.Verify(
-            s => s.DeleteMirrorAsync(
-                It.IsAny<LibraryMirror>(),
-                false, // deleteLibrary
-                false, // deleteFiles - should be false when only mirror deleted
-                It.IsAny<CancellationToken>()),
-            Times.Once);
+        cleanupResult.CleanedUpMirrors.Should().Contain(m => m.Contains("mirror deleted"));
     }
 
     [Fact]
     public async Task CleanupOrphanedMirrors_ReconciliesUserAccessAfterCleanup()
     {
-        // Arrange - create a mirror with missing source library
-        var sourceLibraryId = Guid.NewGuid();
-        var alternative = new LanguageAlternative
-        {
-            Id = Guid.NewGuid(),
-            Name = "Portuguese",
-            MirroredLibraries = new List<LibraryMirror>
+        // Arrange - service returns cleanup result with cleaned mirrors
+        _mirrorServiceMock.Setup(s => s.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrphanCleanupResult
             {
-                new LibraryMirror
-                {
-                    Id = Guid.NewGuid(),
-                    SourceLibraryId = sourceLibraryId,
-                    TargetLibraryName = "Filmes",
-                    TargetPath = "/data/filmes"
-                }
-            }
-        };
-        _context.Configuration.LanguageAlternatives.Add(alternative);
-
-        // Source library doesn't exist
-        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
-            .Returns(new List<LibraryInfo>());
+                TotalCleaned = 1,
+                CleanedUpMirrors = new List<string> { "Filmes (source deleted)" }
+            });
 
         // Act
         await _controller.CleanupOrphanedMirrors(CancellationToken.None);
@@ -672,9 +577,13 @@ public class PolyglotControllerTests : IDisposable
     [Fact]
     public async Task CleanupOrphanedMirrors_NoOrphans_DoesNotReconcileUsers()
     {
-        // Arrange - no alternatives, no orphans
-        _mirrorServiceMock.Setup(s => s.GetJellyfinLibraries())
-            .Returns(new List<LibraryInfo>());
+        // Arrange - service returns no cleanup
+        _mirrorServiceMock.Setup(s => s.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrphanCleanupResult
+            {
+                TotalCleaned = 0,
+                CleanedUpMirrors = new List<string>()
+            });
 
         // Act
         await _controller.CleanupOrphanedMirrors(CancellationToken.None);

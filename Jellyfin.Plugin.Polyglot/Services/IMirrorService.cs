@@ -57,37 +57,37 @@ public interface IMirrorService
     (bool IsValid, string? ErrorMessage) ValidateMirrorConfiguration(Guid sourceLibraryId, string targetPath);
 
     /// <summary>
-    /// Handles a file being added to a source library.
-    /// </summary>
-    /// <param name="sourceLibraryId">The source library ID.</param>
-    /// <param name="filePath">The path of the added file.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Task representing the async operation.</returns>
-    Task HandleFileAddedAsync(Guid sourceLibraryId, string filePath, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Handles a file being deleted from a source library.
-    /// </summary>
-    /// <param name="sourceLibraryId">The source library ID.</param>
-    /// <param name="filePath">The path of the deleted file.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Task representing the async operation.</returns>
-    Task HandleFileDeletedAsync(Guid sourceLibraryId, string filePath, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Handles a file being renamed in a source library.
-    /// </summary>
-    /// <param name="sourceLibraryId">The source library ID.</param>
-    /// <param name="oldPath">The old file path.</param>
-    /// <param name="newPath">The new file path.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Task representing the async operation.</returns>
-    Task HandleFileRenamedAsync(Guid sourceLibraryId, string oldPath, string newPath, CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// Gets all Jellyfin libraries with their metadata settings.
     /// </summary>
     /// <returns>Collection of library information.</returns>
     IEnumerable<LibraryInfo> GetJellyfinLibraries();
+
+    /// <summary>
+    /// Cleans up orphaned mirrors where source or target library no longer exists.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Result of the cleanup operation.</returns>
+    Task<OrphanCleanupResult> CleanupOrphanedMirrorsAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Result of orphan mirror cleanup operation.
+/// </summary>
+public class OrphanCleanupResult
+{
+    /// <summary>
+    /// Gets or sets the list of cleaned up mirrors with their reasons.
+    /// </summary>
+    public List<string> CleanedUpMirrors { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the total number of mirrors cleaned up.
+    /// </summary>
+    public int TotalCleaned { get; set; }
+
+    /// <summary>
+    /// Gets or sets the source library IDs that now have no mirrors.
+    /// </summary>
+    public HashSet<Guid> SourcesWithoutMirrors { get; set; } = new();
 }
 

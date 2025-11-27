@@ -11,6 +11,16 @@ namespace Jellyfin.Plugin.Polyglot.Configuration;
 public class PluginConfiguration : BasePluginConfiguration
 {
     /// <summary>
+    /// Default file extensions to exclude from hardlinking (metadata and images).
+    /// </summary>
+    public static readonly string[] DefaultExcludedExtensions = { ".nfo", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".tbn", ".bmp" };
+
+    /// <summary>
+    /// Default directory names to exclude from mirroring.
+    /// </summary>
+    public static readonly string[] DefaultExcludedDirectories = { "extrafanart", "extrathumbs", ".trickplay", "metadata", ".actors" };
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="PluginConfiguration"/> class.
     /// </summary>
     public PluginConfiguration()
@@ -18,6 +28,8 @@ public class PluginConfiguration : BasePluginConfiguration
         LanguageAlternatives = new List<LanguageAlternative>();
         UserLanguages = new List<UserLanguageConfig>();
         LdapGroupMappings = new List<LdapGroupMapping>();
+        ExcludedExtensions = new List<string>(DefaultExcludedExtensions);
+        ExcludedDirectories = new List<string>(DefaultExcludedDirectories);
     }
 
     /// <summary>
@@ -65,5 +77,17 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the time for daily user reconciliation task (in 24-hour format, e.g., "03:00").
     /// </summary>
     public string UserReconciliationTime { get; set; } = "03:00";
+
+    /// <summary>
+    /// Gets or sets the file extensions to exclude from hardlinking (metadata and images).
+    /// Extensions should include the leading dot (e.g., ".nfo", ".jpg").
+    /// </summary>
+    public List<string> ExcludedExtensions { get; set; }
+
+    /// <summary>
+    /// Gets or sets the directory names to exclude from mirroring.
+    /// These are directory names (not full paths) that will be skipped during mirroring.
+    /// </summary>
+    public List<string> ExcludedDirectories { get; set; }
 }
 

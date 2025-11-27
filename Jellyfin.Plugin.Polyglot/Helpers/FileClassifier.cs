@@ -12,9 +12,9 @@ namespace Jellyfin.Plugin.Polyglot.Helpers;
 public static class FileClassifier
 {
     /// <summary>
-    /// File extensions to exclude from hardlinking (metadata and images).
+    /// Default file extensions to exclude from hardlinking (metadata and images).
     /// </summary>
-    private static readonly HashSet<string> ExcludedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    public static readonly HashSet<string> DefaultExcludedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".nfo",
         ".jpg",
@@ -27,78 +27,9 @@ public static class FileClassifier
     };
 
     /// <summary>
-    /// Base filenames (without extension) that indicate metadata/artwork to exclude.
+    /// Default directory names that should be completely excluded from mirroring.
     /// </summary>
-    private static readonly HashSet<string> ExcludedBaseNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // Primary images
-        "poster",
-        "cover",
-        "folder",
-        "default",
-        "movie",
-        "show",
-        "series",
-
-        // Backdrop images
-        "backdrop",
-        "fanart",
-        "background",
-        "art",
-
-        // Other artwork
-        "banner",
-        "logo",
-        "clearlogo",
-        "thumb",
-        "landscape",
-        "disc",
-        "cdart",
-        "discart",
-        "clearart",
-
-        // Season/episode specific
-        "season",
-        "episode",
-
-        // NFO files
-        "tvshow",
-        "movie"
-    };
-
-    /// <summary>
-    /// Filename suffixes that indicate metadata (e.g., "episode-thumb", "movie-poster").
-    /// </summary>
-    private static readonly string[] ExcludedSuffixes = new[]
-    {
-        "-thumb",
-        "-poster",
-        "-backdrop",
-        "-fanart",
-        "-banner",
-        "-logo",
-        "-clearlogo",
-        "-clearart",
-        "-landscape",
-        "-disc",
-        "-discart",
-        "-cdart"
-    };
-
-    /// <summary>
-    /// Prefixes that indicate numbered backdrops/fanart (e.g., "backdrop1", "fanart2").
-    /// </summary>
-    private static readonly string[] NumberedPrefixes = new[]
-    {
-        "backdrop",
-        "fanart",
-        "art"
-    };
-
-    /// <summary>
-    /// Directory names that should be completely excluded from mirroring.
-    /// </summary>
-    private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
+    public static readonly HashSet<string> DefaultExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         "extrafanart",
         "extrathumbs",
@@ -109,18 +40,39 @@ public static class FileClassifier
 
     /// <summary>
     /// Determines whether a file should be hardlinked (included in the mirror).
+    /// Uses the default excluded extensions and directories.
     /// </summary>
     /// <param name="filePath">The full path to the file.</param>
     /// <returns>True if the file should be hardlinked; false if it should be excluded.</returns>
     public static bool ShouldHardlink(string filePath)
+    {
+        return ShouldHardlink(filePath, null, null);
+    }
+
+    /// <summary>
+    /// Determines whether a file should be hardlinked (included in the mirror).
+    /// </summary>
+    /// <param name="filePath">The full path to the file.</param>
+    /// <param name="excludedExtensions">Custom list of extensions to exclude. If null, uses defaults.</param>
+    /// <param name="excludedDirectories">Custom list of directories to exclude. If null, uses defaults.</param>
+    /// <returns>True if the file should be hardlinked; false if it should be excluded.</returns>
+    public static bool ShouldHardlink(string filePath, IEnumerable<string>? excludedExtensions, IEnumerable<string>? excludedDirectories)
     {
         if (string.IsNullOrEmpty(filePath))
         {
             return false;
         }
 
+        var excludedDirs = excludedDirectories != null
+            ? new HashSet<string>(excludedDirectories, StringComparer.OrdinalIgnoreCase)
+            : DefaultExcludedDirectories;
+
+        var excludedExts = excludedExtensions != null
+            ? new HashSet<string>(excludedExtensions, StringComparer.OrdinalIgnoreCase)
+            : DefaultExcludedExtensions;
+
         // Check if file is within an excluded directory
-        if (IsInExcludedDirectory(filePath))
+        if (IsInExcludedDirectory(filePath, excludedDirs))
         {
             return false;
         }
@@ -130,7 +82,7 @@ public static class FileClassifier
         // Check extension - all files with excluded extensions should be excluded
         // This includes all NFO files (metadata) and all image files (artwork)
         // Per the plan: "NFO Metadata" and image files are language-specific content
-        if (ExcludedExtensions.Contains(extension))
+        if (excludedExts.Contains(extension))
         {
             return false;
         }
@@ -141,107 +93,51 @@ public static class FileClassifier
 
     /// <summary>
     /// Determines whether a directory should be excluded from mirroring.
+    /// Uses the default excluded directories.
     /// </summary>
     /// <param name="directoryPath">The full path to the directory.</param>
     /// <returns>True if the directory should be excluded; false otherwise.</returns>
     public static bool ShouldExcludeDirectory(string directoryPath)
+    {
+        return ShouldExcludeDirectory(directoryPath, null);
+    }
+
+    /// <summary>
+    /// Determines whether a directory should be excluded from mirroring.
+    /// </summary>
+    /// <param name="directoryPath">The full path to the directory.</param>
+    /// <param name="excludedDirectories">Custom list of directories to exclude. If null, uses defaults.</param>
+    /// <returns>True if the directory should be excluded; false otherwise.</returns>
+    public static bool ShouldExcludeDirectory(string directoryPath, IEnumerable<string>? excludedDirectories)
     {
         if (string.IsNullOrEmpty(directoryPath))
         {
             return false;
         }
 
+        var excludedDirs = excludedDirectories != null
+            ? new HashSet<string>(excludedDirectories, StringComparer.OrdinalIgnoreCase)
+            : DefaultExcludedDirectories;
+
         var dirName = Path.GetFileName(directoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        return ExcludedDirectories.Contains(dirName);
+        return excludedDirs.Contains(dirName);
     }
 
     /// <summary>
     /// Checks if the file path is within an excluded directory.
     /// </summary>
-    private static bool IsInExcludedDirectory(string filePath)
+    private static bool IsInExcludedDirectory(string filePath, IReadOnlySet<string> excludedDirectories)
     {
         var directory = Path.GetDirectoryName(filePath);
         while (!string.IsNullOrEmpty(directory))
         {
             var dirName = Path.GetFileName(directory);
-            if (ExcludedDirectories.Contains(dirName))
+            if (excludedDirectories.Contains(dirName))
             {
                 return true;
             }
 
             directory = Path.GetDirectoryName(directory);
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Checks if the extension is an image format.
-    /// </summary>
-    private static bool IsImageExtension(string extension)
-    {
-        return extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".png", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".gif", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".webp", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".tbn", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Determines if a base filename indicates an artwork file that should be excluded.
-    /// </summary>
-    private static bool IsArtworkFile(string baseName)
-    {
-        if (string.IsNullOrEmpty(baseName))
-        {
-            return false;
-        }
-
-        // Direct match with excluded base names
-        if (ExcludedBaseNames.Contains(baseName))
-        {
-            return true;
-        }
-
-        // Check for excluded suffixes (e.g., "episode-thumb")
-        foreach (var suffix in ExcludedSuffixes)
-        {
-            if (baseName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        // Check for numbered patterns (e.g., "backdrop1", "backdrop-1", "fanart2")
-        foreach (var prefix in NumberedPrefixes)
-        {
-            if (baseName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                var remainder = baseName.Substring(prefix.Length);
-                // Check for patterns like "1", "-1", "_1"
-                if (string.IsNullOrEmpty(remainder))
-                {
-                    return true;
-                }
-
-                if (remainder.StartsWith("-") || remainder.StartsWith("_"))
-                {
-                    remainder = remainder.Substring(1);
-                }
-
-                if (int.TryParse(remainder, out _))
-                {
-                    return true;
-                }
-            }
-        }
-
-        // Check for season-specific patterns (e.g., "season01-poster", "season1-banner")
-        if (baseName.StartsWith("season", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
         }
 
         return false;
@@ -273,4 +169,3 @@ public static class FileClassifier
         ".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".sup", ".pgs"
     };
 }
-

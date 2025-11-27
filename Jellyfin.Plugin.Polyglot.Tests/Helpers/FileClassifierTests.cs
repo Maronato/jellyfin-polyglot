@@ -400,5 +400,180 @@ public class FileClassifierTests
     }
 
     #endregion
+
+    #region Custom Extension Tests
+
+    [Fact]
+    public void ShouldHardlink_WithCustomExtensions_UsesCustomList()
+    {
+        // Arrange - custom list that includes .mkv as excluded
+        var customExtensions = new[] { ".mkv", ".txt" };
+        var filePath = "/media/movies/Movie.mkv";
+
+        // Act
+        var result = FileClassifier.ShouldHardlink(filePath, customExtensions, null);
+
+        // Assert
+        result.Should().BeFalse("custom exclusions include .mkv");
+    }
+
+    [Fact]
+    public void ShouldHardlink_WithCustomExtensions_ExcludesJpgWhenRemoved()
+    {
+        // Arrange - custom list that does NOT include .jpg
+        var customExtensions = new[] { ".nfo" };
+        var filePath = "/media/movies/Movie/poster.jpg";
+
+        // Act
+        var result = FileClassifier.ShouldHardlink(filePath, customExtensions, null);
+
+        // Assert
+        result.Should().BeTrue("custom exclusions do not include .jpg");
+    }
+
+    [Fact]
+    public void ShouldHardlink_WithEmptyCustomExtensions_HardlinksEverything()
+    {
+        // Arrange - empty custom list means nothing is excluded by extension
+        var customExtensions = Array.Empty<string>();
+        var filePath = "/media/movies/Movie/movie.nfo";
+
+        // Act - pass empty for directories too so it doesn't get excluded by dir
+        var result = FileClassifier.ShouldHardlink(filePath, customExtensions, Array.Empty<string>());
+
+        // Assert
+        result.Should().BeTrue("empty exclusions list means no files are excluded");
+    }
+
+    [Fact]
+    public void ShouldHardlink_WithNullCustomExtensions_UsesDefaults()
+    {
+        // Arrange
+        var filePath = "/media/movies/Movie/movie.nfo";
+
+        // Act
+        var result = FileClassifier.ShouldHardlink(filePath, null, null);
+
+        // Assert
+        result.Should().BeFalse(".nfo is in the default excluded extensions");
+    }
+
+    #endregion
+
+    #region Custom Directory Tests
+
+    [Fact]
+    public void ShouldExcludeDirectory_WithCustomDirectories_UsesCustomList()
+    {
+        // Arrange - custom list that includes "custom_excluded"
+        var customDirs = new[] { "custom_excluded", "another" };
+        var directoryPath = "/media/movies/Movie/custom_excluded";
+
+        // Act
+        var result = FileClassifier.ShouldExcludeDirectory(directoryPath, customDirs);
+
+        // Assert
+        result.Should().BeTrue("custom exclusions include 'custom_excluded'");
+    }
+
+    [Fact]
+    public void ShouldExcludeDirectory_WithCustomDirectories_DoesNotExcludeMetadataWhenRemoved()
+    {
+        // Arrange - custom list that does NOT include "metadata"
+        var customDirs = new[] { "extrafanart" };
+        var directoryPath = "/media/movies/Movie/metadata";
+
+        // Act
+        var result = FileClassifier.ShouldExcludeDirectory(directoryPath, customDirs);
+
+        // Assert
+        result.Should().BeFalse("custom exclusions do not include 'metadata'");
+    }
+
+    [Fact]
+    public void ShouldExcludeDirectory_WithEmptyCustomDirectories_ExcludesNothing()
+    {
+        // Arrange
+        var customDirs = Array.Empty<string>();
+        var directoryPath = "/media/movies/Movie/metadata";
+
+        // Act
+        var result = FileClassifier.ShouldExcludeDirectory(directoryPath, customDirs);
+
+        // Assert
+        result.Should().BeFalse("empty exclusions list means no directories are excluded");
+    }
+
+    [Fact]
+    public void ShouldExcludeDirectory_WithNullCustomDirectories_UsesDefaults()
+    {
+        // Arrange
+        var directoryPath = "/media/movies/Movie/metadata";
+
+        // Act
+        var result = FileClassifier.ShouldExcludeDirectory(directoryPath, null);
+
+        // Assert
+        result.Should().BeTrue("'metadata' is in the default excluded directories");
+    }
+
+    [Fact]
+    public void ShouldHardlink_WithCustomDirectories_FileInCustomExcludedDir_ReturnsFalse()
+    {
+        // Arrange
+        var customDirs = new[] { "my_excluded_folder" };
+        var filePath = "/media/movies/Movie/my_excluded_folder/video.mkv";
+
+        // Act
+        var result = FileClassifier.ShouldHardlink(filePath, null, customDirs);
+
+        // Assert
+        result.Should().BeFalse("file is in a custom excluded directory");
+    }
+
+    [Fact]
+    public void ShouldHardlink_WithCustomDirectoriesRemovingMetadata_FileInMetadata_ReturnsTrue()
+    {
+        // Arrange - custom list that does NOT include "metadata"
+        var customDirs = new[] { "extrafanart" };
+        var filePath = "/media/movies/Movie/metadata/data.xml";
+
+        // Act - also remove xml from excluded extensions
+        var result = FileClassifier.ShouldHardlink(filePath, Array.Empty<string>(), customDirs);
+
+        // Assert
+        result.Should().BeTrue("custom exclusions do not include 'metadata' and no extensions are excluded");
+    }
+
+    #endregion
+
+    #region Default Values Tests
+
+    [Fact]
+    public void DefaultExcludedExtensions_ContainsExpectedValues()
+    {
+        // Assert
+        FileClassifier.DefaultExcludedExtensions.Should().Contain(".nfo");
+        FileClassifier.DefaultExcludedExtensions.Should().Contain(".jpg");
+        FileClassifier.DefaultExcludedExtensions.Should().Contain(".png");
+        FileClassifier.DefaultExcludedExtensions.Should().Contain(".gif");
+        FileClassifier.DefaultExcludedExtensions.Should().Contain(".webp");
+        FileClassifier.DefaultExcludedExtensions.Should().Contain(".tbn");
+        FileClassifier.DefaultExcludedExtensions.Should().Contain(".bmp");
+        FileClassifier.DefaultExcludedExtensions.Should().Contain(".jpeg");
+    }
+
+    [Fact]
+    public void DefaultExcludedDirectories_ContainsExpectedValues()
+    {
+        // Assert
+        FileClassifier.DefaultExcludedDirectories.Should().Contain("extrafanart");
+        FileClassifier.DefaultExcludedDirectories.Should().Contain("extrathumbs");
+        FileClassifier.DefaultExcludedDirectories.Should().Contain(".trickplay");
+        FileClassifier.DefaultExcludedDirectories.Should().Contain("metadata");
+        FileClassifier.DefaultExcludedDirectories.Should().Contain(".actors");
+    }
+
+    #endregion
 }
 

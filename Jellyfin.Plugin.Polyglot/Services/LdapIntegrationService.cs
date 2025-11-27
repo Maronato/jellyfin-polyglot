@@ -228,6 +228,20 @@ public class LdapIntegrationService : ILdapIntegrationService
     }
 
     /// <summary>
+    /// Property names expected in the LDAP plugin configuration.
+    /// Used to validate schema compatibility.
+    /// </summary>
+    private static readonly string[] RequiredLdapProperties = new[]
+    {
+        "LdapServer",
+        "LdapPort",
+        "LdapBaseDn",
+        "LdapBindUser",
+        "LdapBindPassword",
+        "LdapSearchFilter"
+    };
+
+    /// <summary>
     /// Reads LDAP configuration from the LDAP plugin via reflection.
     /// </summary>
     private LdapConfiguration? GetLdapConfiguration(IPlugin ldapPlugin)
@@ -244,29 +258,45 @@ public class LdapIntegrationService : ILdapIntegrationService
             var configProperty = ldapPlugin.GetType().GetProperty("Configuration");
             if (configProperty == null)
             {
+                _logger.LogError("LDAP plugin does not have a Configuration property - plugin may be incompatible");
                 return null;
             }
 
             var configObj = configProperty.GetValue(ldapPlugin);
             if (configObj == null)
             {
+                _logger.LogWarning("LDAP plugin configuration is null");
                 return null;
+            }
+
+            var configType = configObj.GetType();
+
+            // Validate schema - check for required properties
+            var missingProperties = RequiredLdapProperties
+                .Where(p => configType.GetProperty(p, BindingFlags.Public | BindingFlags.Instance) == null)
+                .ToList();
+
+            if (missingProperties.Count > 0)
+            {
+                _logger.LogWarning(
+                    "LDAP plugin configuration is missing expected properties: {MissingProperties}. " +
+                    "The LDAP plugin version may be incompatible. Integration may not work correctly.",
+                    string.Join(", ", missingProperties));
             }
 
             // Map properties via reflection
             var config = new LdapConfiguration();
-            var configType = configObj.GetType();
 
-            config.LdapServer = GetPropertyValue<string>(configType, configObj, "LdapServer") ?? string.Empty;
-            config.LdapPort = GetPropertyValue<int>(configType, configObj, "LdapPort");
-            config.UseSsl = GetPropertyValue<bool>(configType, configObj, "UseSsl");
-            config.UseStartTls = GetPropertyValue<bool>(configType, configObj, "UseStartTls");
-            config.SkipSslVerify = GetPropertyValue<bool>(configType, configObj, "SkipSslVerify");
-            config.LdapBaseDn = GetPropertyValue<string>(configType, configObj, "LdapBaseDn") ?? string.Empty;
-            config.LdapBindUser = GetPropertyValue<string>(configType, configObj, "LdapBindUser") ?? string.Empty;
-            config.LdapBindPassword = GetPropertyValue<string>(configType, configObj, "LdapBindPassword") ?? string.Empty;
-            config.LdapSearchFilter = GetPropertyValue<string>(configType, configObj, "LdapSearchFilter") ?? string.Empty;
-            config.LdapUidAttribute = GetPropertyValue<string>(configType, configObj, "LdapUidAttribute") ?? "uid";
+            config.LdapServer = GetPropertyValue<string>(configType, configObj, "LdapServer", _logger) ?? string.Empty;
+            config.LdapPort = GetPropertyValue<int>(configType, configObj, "LdapPort", _logger);
+            config.UseSsl = GetPropertyValue<bool>(configType, configObj, "UseSsl", _logger);
+            config.UseStartTls = GetPropertyValue<bool>(configType, configObj, "UseStartTls", _logger);
+            config.SkipSslVerify = GetPropertyValue<bool>(configType, configObj, "SkipSslVerify", _logger);
+            config.LdapBaseDn = GetPropertyValue<string>(configType, configObj, "LdapBaseDn", _logger) ?? string.Empty;
+            config.LdapBindUser = GetPropertyValue<string>(configType, configObj, "LdapBindUser", _logger) ?? string.Empty;
+            config.LdapBindPassword = GetPropertyValue<string>(configType, configObj, "LdapBindPassword", _logger) ?? string.Empty;
+            config.LdapSearchFilter = GetPropertyValue<string>(configType, configObj, "LdapSearchFilter", _logger) ?? string.Empty;
+            config.LdapUidAttribute = GetPropertyValue<string>(configType, configObj, "LdapUidAttribute", _logger) ?? "uid";
 
             _cachedConfig = config;
             _configCacheTime = DateTime.UtcNow;
@@ -283,11 +313,12 @@ public class LdapIntegrationService : ILdapIntegrationService
     /// <summary>
     /// Gets a property value from an object via reflection.
     /// </summary>
-    private static T? GetPropertyValue<T>(Type type, object obj, string propertyName)
+    private static T? GetPropertyValue<T>(Type type, object obj, string propertyName, ILogger logger)
     {
         var property = type.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
         if (property == null)
         {
+            logger.LogDebug("LDAP config property {PropertyName} not found", propertyName);
             return default;
         }
 

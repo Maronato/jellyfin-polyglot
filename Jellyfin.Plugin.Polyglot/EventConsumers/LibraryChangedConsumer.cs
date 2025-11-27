@@ -1,9 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.Polyglot.Models;
 using Jellyfin.Plugin.Polyglot.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -43,7 +41,6 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _libraryManager.ItemAdded += OnItemAdded;
         _libraryManager.ItemRemoved += OnItemRemoved;
 
         _logger.LogInformation("Library change consumer initialized");
@@ -53,41 +50,10 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
     /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        _libraryManager.ItemAdded -= OnItemAdded;
         _libraryManager.ItemRemoved -= OnItemRemoved;
 
         _logger.LogInformation("Library change consumer stopped");
         return Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Handles item added events.
-    /// Note: Real-time sync is handled by ILibraryPostScanTask after library scans complete.
-    /// This is here for logging/debugging purposes.
-    /// </summary>
-    private void OnItemAdded(object? sender, ItemChangeEventArgs e)
-    {
-        if (e.Item == null)
-        {
-            return;
-        }
-
-        // We mainly care about media files, not metadata
-        if (!IsMediaItem(e.Item))
-        {
-            return;
-        }
-
-        var libraryId = GetLibraryId(e.Item);
-        if (!libraryId.HasValue)
-        {
-            return;
-        }
-
-        _logger.LogDebug("Item added in library {LibraryId}: {ItemName}", libraryId.Value, e.Item.Name);
-
-        // Note: Sync is handled by ILibraryPostScanTask after the library scan completes.
-        // This provides better batching and integrates with Jellyfin's native scanning.
     }
 
     /// <summary>
@@ -103,212 +69,68 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
         // Check if this is a virtual folder (library) being removed
         if (e.Item is AggregateFolder)
         {
-            CheckForOrphanedMirrors();
+            // Run async cleanup in background
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await CleanupOrphanedMirrorsAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to cleanup orphaned mirrors");
+                }
+            });
         }
     }
 
     /// <summary>
-    /// Checks for and cleans up orphaned mirrors when a library is deleted.
-    /// - If source library is deleted: Delete the entire mirror (config + files)
-    /// - If mirror library is deleted: Remove the mirror config
-    /// </summary>
-    private void CheckForOrphanedMirrors()
-    {
-        // Run async cleanup in background
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await CleanupOrphanedMirrorsAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to cleanup orphaned mirrors");
-            }
-        });
-    }
-
-    /// <summary>
-    /// Async implementation of orphaned mirror cleanup.
+    /// Cleans up orphaned mirrors using the shared service method.
     /// </summary>
     private async Task CleanupOrphanedMirrorsAsync(CancellationToken cancellationToken)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
+        var result = await _mirrorService.CleanupOrphanedMirrorsAsync(cancellationToken).ConfigureAwait(false);
+
+        if (result.TotalCleaned == 0)
         {
             return;
         }
 
-        var existingLibraryIds = _mirrorService.GetJellyfinLibraries()
-            .Select(l => l.Id)
-            .ToHashSet();
+        _logger.LogInformation("Cleaned up {Count} orphaned mirrors", result.TotalCleaned);
 
-        var mirrorsToDelete = new List<(LanguageAlternative Alternative, LibraryMirror Mirror, string Reason)>();
-
-        foreach (var alternative in config.LanguageAlternatives)
+        // Ensure users have access to sources that no longer have mirrors
+        if (result.SourcesWithoutMirrors.Count > 0)
         {
-            foreach (var mirror in alternative.MirroredLibraries)
+            var config = Plugin.Instance?.Configuration;
+            if (config != null)
             {
-                // Check if source library still exists
-                if (!existingLibraryIds.Contains(mirror.SourceLibraryId))
+                foreach (var userConfig in config.UserLanguages.Where(u => u.IsPluginManaged))
                 {
-                    _logger.LogWarning(
-                        "Source library {SourceLibraryId} for mirror {MirrorId} no longer exists - will delete mirror",
-                        mirror.SourceLibraryId,
-                        mirror.Id);
-
-                    mirrorsToDelete.Add((alternative, mirror, "source deleted"));
-                    continue;
-                }
-
-                // Check if target library still exists (if it was created)
-                if (mirror.TargetLibraryId.HasValue && !existingLibraryIds.Contains(mirror.TargetLibraryId.Value))
-                {
-                    _logger.LogWarning(
-                        "Target library {TargetLibraryId} for mirror {MirrorId} no longer exists - removing mirror config",
-                        mirror.TargetLibraryId.Value,
-                        mirror.Id);
-
-                    mirrorsToDelete.Add((alternative, mirror, "mirror deleted"));
-                }
-            }
-        }
-
-        // Track sources that will become "orphaned" (no mirrors from any language)
-        // These sources should be added to affected users' access to prevent losing movies
-        var sourcesToPreserve = new HashSet<Guid>();
-
-        // Delete orphaned mirrors
-        foreach (var (alternative, mirror, reason) in mirrorsToDelete)
-        {
-            try
-            {
-                // Delete files only if source was deleted (files are now orphaned)
-                // If only the mirror library was deleted, the source still has the files
-                var deleteFiles = reason == "source deleted";
-
-                // Don't try to delete Jellyfin library - it's already gone
-                await _mirrorService.DeleteMirrorAsync(mirror, deleteLibrary: false, deleteFiles: deleteFiles, cancellationToken)
-                    .ConfigureAwait(false);
-
-                // Remove from alternative's mirror list
-                alternative.MirroredLibraries.Remove(mirror);
-
-                // Check if this source now has NO mirrors from any language
-                // If so, we need to ensure users don't lose access to it
-                if (reason == "mirror deleted")
-                {
-                    var sourceHasOtherMirrors = config.LanguageAlternatives
-                        .SelectMany(a => a.MirroredLibraries)
-                        .Any(m => m.SourceLibraryId == mirror.SourceLibraryId);
-
-                    if (!sourceHasOtherMirrors && existingLibraryIds.Contains(mirror.SourceLibraryId))
+                    try
                     {
-                        sourcesToPreserve.Add(mirror.SourceLibraryId);
-                        _logger.LogInformation(
-                            "Source library {SourceLibraryId} ({SourceName}) has no more mirrors - will ensure user access",
-                            mirror.SourceLibraryId,
-                            mirror.SourceLibraryName);
+                        await _libraryAccessService.AddLibrariesToUserAccessAsync(
+                            userConfig.UserId,
+                            result.SourcesWithoutMirrors,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to add sources to user {UserId}", userConfig.UserId);
                     }
                 }
-
-                _logger.LogInformation(
-                    "Removed orphaned mirror {MirrorName} ({Reason})",
-                    mirror.TargetLibraryName,
-                    reason);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to delete orphaned mirror {MirrorId}", mirror.Id);
             }
         }
 
-        if (mirrorsToDelete.Count > 0)
+        // Reconcile user access after cleanup
+        try
         {
-            Plugin.Instance?.SaveConfiguration();
-
-            // For sources that now have no mirrors, ensure affected users still have access
-            // This prevents users from losing access to movies when the last mirror is deleted
-            if (sourcesToPreserve.Count > 0)
-            {
-                await EnsureUsersHaveAccessToSourcesAsync(sourcesToPreserve, cancellationToken).ConfigureAwait(false);
-            }
-
-            // Reconcile user access after cleanup
-            try
-            {
-                await _libraryAccessService.ReconcileAllUsersAsync(cancellationToken).ConfigureAwait(false);
-                _logger.LogInformation("Reconciled user access after cleaning up {Count} orphaned mirrors", mirrorsToDelete.Count);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to reconcile user access after cleanup");
-            }
+            await _libraryAccessService.ReconcileAllUsersAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Reconciled user access after cleanup");
         }
-    }
-
-    /// <summary>
-    /// Ensures all managed users have access to the specified source libraries.
-    /// Called when mirrors are deleted and sources become "unmanaged".
-    /// </summary>
-    private async Task EnsureUsersHaveAccessToSourcesAsync(HashSet<Guid> sourceIds, CancellationToken cancellationToken)
-    {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
+        catch (Exception ex)
         {
-            return;
+            _logger.LogError(ex, "Failed to reconcile user access after cleanup");
         }
-
-        foreach (var userConfig in config.UserLanguages.Where(u => u.IsPluginManaged))
-        {
-            try
-            {
-                await _libraryAccessService.AddLibrariesToUserAccessAsync(
-                    userConfig.UserId,
-                    sourceIds,
-                    cancellationToken).ConfigureAwait(false);
-
-                _logger.LogDebug(
-                    "Added {Count} source libraries to user {Username}'s access",
-                    sourceIds.Count,
-                    userConfig.Username);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to add sources to user {UserId}", userConfig.UserId);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Checks if an item is a media item (video, audio, etc.).
-    /// </summary>
-    private static bool IsMediaItem(BaseItem item)
-    {
-        return item is MediaBrowser.Controller.Entities.Video
-            || item is MediaBrowser.Controller.Entities.Audio.Audio
-            || item is MediaBrowser.Controller.Entities.Movies.Movie
-            || item is MediaBrowser.Controller.Entities.TV.Episode
-            || item is MediaBrowser.Controller.Entities.TV.Series;
-    }
-
-    /// <summary>
-    /// Gets the library ID for an item.
-    /// </summary>
-    private static Guid? GetLibraryId(BaseItem item)
-    {
-        var parent = item;
-        while (parent != null)
-        {
-            if (parent is AggregateFolder folder)
-            {
-                return folder.Id;
-            }
-
-            parent = parent.GetParent();
-        }
-
-        return null;
     }
 
     /// <inheritdoc />

@@ -1,3 +1,4 @@
+using System.Threading;
 using Jellyfin.Data.Entities;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Polyglot.Configuration;
@@ -75,6 +76,8 @@ public static class MockFactory
         var mock = new Mock<IMirrorService>();
         mock.Setup(m => m.ValidateMirrorConfiguration(It.IsAny<Guid>(), It.IsAny<string>()))
             .Returns((true, null));
+        mock.Setup(m => m.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrphanCleanupResult());
         return mock;
     }
 
