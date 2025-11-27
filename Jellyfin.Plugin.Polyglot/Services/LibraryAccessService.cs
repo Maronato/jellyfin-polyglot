@@ -212,7 +212,7 @@ public class LibraryAccessService : ILibraryAccessService
             yield break;
         }
 
-        // Get all libraries that are part of the multi-lang system
+        // Get all libraries that are part of the Polyglot-managed system
         var managedLibraries = GetManagedLibraryIds();
 
         // Get all Jellyfin libraries
@@ -263,7 +263,7 @@ public class LibraryAccessService : ILibraryAccessService
 
             if (!isManaged)
             {
-                // This library is NOT part of the multi-lang system (like "Home Videos")
+                // This library is NOT part of the Polyglot-managed system (like "Home Videos")
                 // We don't include it here - it will be handled separately to preserve user's existing access
                 continue;
             }

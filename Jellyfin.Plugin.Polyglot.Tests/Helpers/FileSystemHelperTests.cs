@@ -139,7 +139,7 @@ public class FileSystemHelperTests
     public void CreateHardLink_ValidSourceFile_CreatesHardlink()
     {
         // Arrange
-        var tempDir = Path.Combine(Path.GetTempPath(), "multilang_test_" + Guid.NewGuid().ToString("N"));
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
 
         var sourcePath = Path.Combine(tempDir, "source.txt");
@@ -174,7 +174,7 @@ public class FileSystemHelperTests
     public void CreateHardLink_CreatesParentDirectories()
     {
         // Arrange
-        var tempDir = Path.Combine(Path.GetTempPath(), "multilang_test_" + Guid.NewGuid().ToString("N"));
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
 
         var sourcePath = Path.Combine(tempDir, "source.txt");
@@ -209,7 +209,7 @@ public class FileSystemHelperTests
     public void CreateHardLink_OverwritesExistingFile()
     {
         // Arrange
-        var tempDir = Path.Combine(Path.GetTempPath(), "multilang_test_" + Guid.NewGuid().ToString("N"));
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
 
         var sourcePath = Path.Combine(tempDir, "source.txt");
@@ -428,7 +428,7 @@ public class FileSystemHelperTests
     public void AreOnSameFilesystem_SameDirectory_ReturnsTrue()
     {
         // Arrange
-        var tempDir = Path.Combine(Path.GetTempPath(), "multilang_test_" + Guid.NewGuid().ToString("N"));
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
 
         var path1 = Path.Combine(tempDir, "dir1");
@@ -466,7 +466,7 @@ public class FileSystemHelperTests
     public void CleanupEmptyDirectories_RemovesEmptyDirs()
     {
         // Arrange
-        var tempDir = Path.Combine(Path.GetTempPath(), "multilang_test_" + Guid.NewGuid().ToString("N"));
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
         var nestedDir = Path.Combine(tempDir, "a", "b", "c");
         Directory.CreateDirectory(nestedDir);
 
@@ -499,7 +499,7 @@ public class FileSystemHelperTests
     public void CleanupEmptyDirectories_StopsAtNonEmptyDir()
     {
         // Arrange
-        var tempDir = Path.Combine(Path.GetTempPath(), "multilang_test_" + Guid.NewGuid().ToString("N"));
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
         var nestedDir = Path.Combine(tempDir, "a", "b", "c");
         Directory.CreateDirectory(nestedDir);
 

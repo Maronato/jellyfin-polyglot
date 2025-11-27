@@ -191,7 +191,7 @@ public class UserLibraryAccessBehaviorTests : IDisposable
     [Fact]
     public void NonManagedLibraries_AreNeverIncludedInManagedAccess()
     {
-        // Scenario: Libraries like "Home Videos" that aren't part of the multi-lang
+        // Scenario: Libraries like "Home Videos" that aren't part of the Polyglot-managed
         // system should NOT be returned by GetExpectedLibraryAccess.
         // They're handled separately to preserve user's existing access.
 

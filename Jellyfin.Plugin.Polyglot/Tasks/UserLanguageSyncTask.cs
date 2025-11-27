@@ -31,7 +31,7 @@ public class UserLanguageSyncTask : IScheduledTask
     }
 
     /// <inheritdoc />
-    public string Name => "Multi-Lang User Library Sync";
+    public string Name => "Polyglot User Library Sync";
 
     /// <inheritdoc />
     public string Key => "PolyglotUserSync";
@@ -40,7 +40,7 @@ public class UserLanguageSyncTask : IScheduledTask
     public string Description => "Reconciles user library access permissions with their language assignments.";
 
     /// <inheritdoc />
-    public string Category => "Multi-Language";
+    public string Category => "Polyglot";
 
     /// <inheritdoc />
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()

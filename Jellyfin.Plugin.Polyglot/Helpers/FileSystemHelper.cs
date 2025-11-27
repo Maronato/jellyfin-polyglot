@@ -185,7 +185,7 @@ public static class FileSystemHelper
         bool createdTestFile = false;
         if (testSourceFile == null)
         {
-            testSourceFile = Path.Combine(sourceDir, $".multilang_test_{Guid.NewGuid():N}");
+            testSourceFile = Path.Combine(sourceDir, $".polyglot_test_{Guid.NewGuid():N}");
             try
             {
                 File.WriteAllText(testSourceFile, "test");
@@ -224,7 +224,7 @@ public static class FileSystemHelper
         }
 
         // Try to create a test hardlink
-        var testLinkPath = Path.Combine(targetDir, $".multilang_test_{Guid.NewGuid():N}");
+        var testLinkPath = Path.Combine(targetDir, $".polyglot_test_{Guid.NewGuid():N}");
         bool canHardlink = false;
 
         try

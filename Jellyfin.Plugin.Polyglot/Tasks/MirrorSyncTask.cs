@@ -26,7 +26,7 @@ public class MirrorSyncTask : IScheduledTask
     }
 
     /// <inheritdoc />
-    public string Name => "Multi-Lang Mirror Sync";
+    public string Name => "Polyglot Mirror Sync";
 
     /// <inheritdoc />
     public string Key => "PolyglotMirrorSync";
@@ -35,7 +35,7 @@ public class MirrorSyncTask : IScheduledTask
     public string Description => "Synchronizes all language mirror libraries with their source libraries.";
 
     /// <inheritdoc />
-    public string Category => "Multi-Language";
+    public string Category => "Polyglot";
 
     /// <inheritdoc />
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()

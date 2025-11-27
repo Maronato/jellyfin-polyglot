@@ -1,7 +1,9 @@
 using Jellyfin.Plugin.Polyglot.Configuration;
 using Jellyfin.Plugin.Polyglot.Models;
 using MediaBrowser.Common.Configuration;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Serialization;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace Jellyfin.Plugin.Polyglot.Tests.TestHelpers;
@@ -21,6 +23,17 @@ public class PluginTestContext : IDisposable
     private static readonly object _lock = new();
 
     public PluginConfiguration Configuration => _plugin.Configuration;
+
+    /// <summary>
+    /// Gets the mock library manager used when constructing the plugin.
+    /// Useful for verifying interactions such as uninstall cleanup.
+    /// </summary>
+    public Mock<ILibraryManager> LibraryManagerMock { get; }
+
+    /// <summary>
+    /// Gets the mock logger used when constructing the plugin.
+    /// </summary>
+    public Mock<ILogger<Plugin>> PluginLoggerMock { get; }
     
     /// <summary>
     /// Gets the Plugin instance created by this context.
@@ -33,7 +46,7 @@ public class PluginTestContext : IDisposable
         // Lock to prevent race conditions with Plugin.Instance during parallel test execution
         Monitor.Enter(_lock);
         
-        _tempConfigPath = Path.Combine(Path.GetTempPath(), "multilang_test_" + Guid.NewGuid().ToString("N"));
+        _tempConfigPath = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempConfigPath);
 
         var applicationPathsMock = new Mock<IApplicationPaths>();
@@ -46,7 +59,14 @@ public class PluginTestContext : IDisposable
             .Returns(new PluginConfiguration());
         xmlSerializerMock.Setup(s => s.SerializeToFile(It.IsAny<object>(), It.IsAny<string>()));
 
-        _plugin = new Plugin(applicationPathsMock.Object, xmlSerializerMock.Object);
+        LibraryManagerMock = new Mock<ILibraryManager>();
+        PluginLoggerMock = new Mock<ILogger<Plugin>>();
+
+        _plugin = new Plugin(
+            applicationPathsMock.Object,
+            xmlSerializerMock.Object,
+            LibraryManagerMock.Object,
+            PluginLoggerMock.Object);
         
         // Verify Plugin.Instance is set correctly
         if (!ReferenceEquals(Plugin.Instance, _plugin))

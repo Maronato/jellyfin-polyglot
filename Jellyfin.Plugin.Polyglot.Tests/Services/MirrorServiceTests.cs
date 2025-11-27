@@ -121,7 +121,7 @@ public class MirrorServiceFileOperationTests : IDisposable
 
     public MirrorServiceFileOperationTests()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), "multilang_test_" + Guid.NewGuid().ToString("N"));
+        _tempDir = Path.Combine(Path.GetTempPath(), "polyglot_test_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDir);
 
         _libraryManagerMock = new Mock<ILibraryManager>();
@@ -551,7 +551,7 @@ public class MirrorServiceCleanupTests : IDisposable
         var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
 
         // Use a real temp directory so we can verify deletion behavior
-        var tempDir = Path.Combine(Path.GetTempPath(), "multilang_cleanup_" + Guid.NewGuid().ToString("N"));
+        var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_cleanup_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
 
         var mirror = _context.AddMirror(

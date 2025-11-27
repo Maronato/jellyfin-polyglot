@@ -31,9 +31,9 @@ public class MirrorSyncTaskTests : IDisposable
     [Fact]
     public void TaskMetadata_HasCorrectValues()
     {
-        _task.Name.Should().Be("Multi-Lang Mirror Sync");
+        _task.Name.Should().Be("Polyglot Mirror Sync");
         _task.Key.Should().Be("PolyglotMirrorSync");
-        _task.Category.Should().Be("Multi-Language");
+        _task.Category.Should().Be("Polyglot");
     }
 
     [Fact]
@@ -159,9 +159,9 @@ public class UserLanguageSyncTaskTests : IDisposable
     [Fact]
     public void TaskMetadata_HasCorrectValues()
     {
-        _task.Name.Should().Be("Multi-Lang User Library Sync");
+        _task.Name.Should().Be("Polyglot User Library Sync");
         _task.Key.Should().Be("PolyglotUserSync");
-        _task.Category.Should().Be("Multi-Language");
+        _task.Category.Should().Be("Polyglot");
     }
 
     [Fact]

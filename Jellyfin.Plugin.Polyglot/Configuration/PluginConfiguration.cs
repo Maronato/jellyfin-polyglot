@@ -6,7 +6,7 @@ using MediaBrowser.Model.Plugins;
 namespace Jellyfin.Plugin.Polyglot.Configuration;
 
 /// <summary>
-/// Plugin configuration for Multi-Language Library.
+/// Plugin configuration for the Polyglot plugin.
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
