@@ -9,6 +9,14 @@
     "repositoryUrl": "https://github.com/Maronato/jellyfin-polyglot",
     "versions": [
       {
+        "version": "0.4.2.0",
+        "changelog": "**Full Changelog**: https://github.com/Maronato/jellyfin-polyglot/compare/v0.4.1...v0.4.2\n",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/Maronato/jellyfin-polyglot/releases/download/v0.4.2/polyglot_0.4.2.0.zip",
+        "checksum": "aad680a5ce0189967e21194d4763d48a",
+        "timestamp": "2025-11-27T06:35:00Z"
+      },
+      {
         "version": "0.4.1.0",
         "changelog": "## What's Changed\n* Refactor plugin uninstall to use MirrorService for cleanup by @Maronato in https://github.com/Maronato/jellyfin-polyglot/pull/2\n\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-polyglot/compare/v0.4.0...v0.4.1\n",
         "targetAbi": "10.10.0.0",
