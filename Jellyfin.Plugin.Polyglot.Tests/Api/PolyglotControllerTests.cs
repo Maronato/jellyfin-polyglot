@@ -263,7 +263,6 @@ public class PolyglotControllerTests : IDisposable
     {
         // Arrange
         _context.Configuration.EnableLdapIntegration = true;
-        _context.Configuration.MirrorSyncIntervalHours = 12;
 
         // Act
         var result = _controller.GetSettings();
@@ -272,7 +271,6 @@ public class PolyglotControllerTests : IDisposable
         result.Result.Should().BeOfType<OkObjectResult>();
         var settings = (PluginSettings)((OkObjectResult)result.Result!).Value!;
         settings.EnableLdapIntegration.Should().BeTrue();
-        settings.MirrorSyncIntervalHours.Should().Be(12);
     }
 
     [Fact]
@@ -281,8 +279,7 @@ public class PolyglotControllerTests : IDisposable
         // Arrange
         var settings = new PluginSettings
         {
-            EnableLdapIntegration = true,
-            MirrorSyncIntervalHours = 24
+            EnableLdapIntegration = true
         };
 
         // Act
@@ -291,7 +288,6 @@ public class PolyglotControllerTests : IDisposable
         // Assert
         result.Should().BeOfType<NoContentResult>();
         _context.Configuration.EnableLdapIntegration.Should().BeTrue();
-        _context.Configuration.MirrorSyncIntervalHours.Should().Be(24);
     }
 
     #endregion
@@ -386,113 +382,6 @@ public class PolyglotControllerTests : IDisposable
         var mirror = alternative.MirroredLibraries[0];
         mirror.TargetLibraryName.Should().Be("Movies (Portuguese)",
             "default name should be '{SourceName} ({AlternativeName})'");
-    }
-
-    #endregion
-
-    #region CleanupOrphanedMirrors
-
-    [Fact]
-    public async Task CleanupOrphanedMirrors_NoOrphans_ReturnsZeroCleaned()
-    {
-        // Arrange - service returns no orphans
-        _mirrorServiceMock.Setup(s => s.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new OrphanCleanupResult
-            {
-                TotalCleaned = 0,
-                CleanedUpMirrors = new List<string>()
-            });
-
-        // Act
-        var result = await _controller.CleanupOrphanedMirrors(CancellationToken.None);
-
-        // Assert
-        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var cleanupResult = okResult.Value.Should().BeOfType<CleanupResult>().Subject;
-        cleanupResult.TotalCleaned.Should().Be(0);
-        cleanupResult.CleanedUpMirrors.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task CleanupOrphanedMirrors_SourceDeleted_RemovesMirrorAndDeletesFiles()
-    {
-        // Arrange - service returns cleanup result for source deleted scenario
-        _mirrorServiceMock.Setup(s => s.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new OrphanCleanupResult
-            {
-                TotalCleaned = 1,
-                CleanedUpMirrors = new List<string> { "Filmes (source deleted)" }
-            });
-
-        // Act
-        var result = await _controller.CleanupOrphanedMirrors(CancellationToken.None);
-
-        // Assert
-        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var cleanupResult = okResult.Value.Should().BeOfType<CleanupResult>().Subject;
-        cleanupResult.TotalCleaned.Should().Be(1);
-        cleanupResult.CleanedUpMirrors.Should().Contain(m => m.Contains("source deleted"));
-    }
-
-    [Fact]
-    public async Task CleanupOrphanedMirrors_MirrorLibraryDeleted_RemovesMirrorButKeepsSourceFiles()
-    {
-        // Arrange - service returns cleanup result for mirror deleted scenario
-        _mirrorServiceMock.Setup(s => s.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new OrphanCleanupResult
-            {
-                TotalCleaned = 1,
-                CleanedUpMirrors = new List<string> { "Filmes (mirror deleted)" }
-            });
-
-        // Act
-        var result = await _controller.CleanupOrphanedMirrors(CancellationToken.None);
-
-        // Assert
-        var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-        var cleanupResult = okResult.Value.Should().BeOfType<CleanupResult>().Subject;
-        cleanupResult.TotalCleaned.Should().Be(1);
-        cleanupResult.CleanedUpMirrors.Should().Contain(m => m.Contains("mirror deleted"));
-    }
-
-    [Fact]
-    public async Task CleanupOrphanedMirrors_ReconciliesUserAccessAfterCleanup()
-    {
-        // Arrange - service returns cleanup result with cleaned mirrors
-        _mirrorServiceMock.Setup(s => s.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new OrphanCleanupResult
-            {
-                TotalCleaned = 1,
-                CleanedUpMirrors = new List<string> { "Filmes (source deleted)" }
-            });
-
-        // Act
-        await _controller.CleanupOrphanedMirrors(CancellationToken.None);
-
-        // Assert - user access reconciliation was called
-        _libraryAccessServiceMock.Verify(
-            s => s.ReconcileAllUsersAsync(It.IsAny<CancellationToken>()),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task CleanupOrphanedMirrors_NoOrphans_DoesNotReconcileUsers()
-    {
-        // Arrange - service returns no cleanup
-        _mirrorServiceMock.Setup(s => s.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new OrphanCleanupResult
-            {
-                TotalCleaned = 0,
-                CleanedUpMirrors = new List<string>()
-            });
-
-        // Act
-        await _controller.CleanupOrphanedMirrors(CancellationToken.None);
-
-        // Assert - no reconciliation needed
-        _libraryAccessServiceMock.Verify(
-            s => s.ReconcileAllUsersAsync(It.IsAny<CancellationToken>()),
-            Times.Never);
     }
 
     #endregion

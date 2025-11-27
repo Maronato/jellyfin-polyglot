@@ -53,12 +53,6 @@ public class PluginConfiguration : BasePluginConfiguration
     public List<LdapGroupMapping> LdapGroupMappings { get; set; }
 
     /// <summary>
-    /// Gets or sets the interval in hours between scheduled mirror syncs.
-    /// Note: Mirrors are also synced automatically after library scans via ILibraryPostScanTask.
-    /// </summary>
-    public int MirrorSyncIntervalHours { get; set; } = 6;
-
-    /// <summary>
     /// Gets or sets the time for daily user reconciliation task (in 24-hour format, e.g., "03:00").
     /// </summary>
     public string UserReconciliationTime { get; set; } = "03:00";

@@ -617,8 +617,7 @@ public class PolyglotController : ControllerBase
 
         return Ok(new PluginSettings
         {
-            EnableLdapIntegration = config.EnableLdapIntegration,
-            MirrorSyncIntervalHours = config.MirrorSyncIntervalHours
+            EnableLdapIntegration = config.EnableLdapIntegration
         });
     }
 
@@ -636,49 +635,10 @@ public class PolyglotController : ControllerBase
         }
 
         config.EnableLdapIntegration = settings.EnableLdapIntegration;
-        config.MirrorSyncIntervalHours = settings.MirrorSyncIntervalHours;
 
         Plugin.Instance?.SaveConfiguration();
 
         return NoContent();
-    }
-
-    /// <summary>
-    /// Cleans up orphaned mirrors (source or mirror library no longer exists).
-    /// </summary>
-    [HttpPost("CleanupOrphanedMirrors")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult<CleanupResult>> CleanupOrphanedMirrors(CancellationToken cancellationToken = default)
-    {
-        var result = await _mirrorService.CleanupOrphanedMirrorsAsync(cancellationToken).ConfigureAwait(false);
-
-        if (result.TotalCleaned > 0)
-        {
-            // Ensure users have access to sources that no longer have mirrors
-            if (result.SourcesWithoutMirrors.Count > 0)
-            {
-                var config = Plugin.Instance?.Configuration;
-                if (config != null)
-                {
-                    foreach (var userConfig in config.UserLanguages.Where(u => u.IsPluginManaged))
-                    {
-                        await _libraryAccessService.AddLibrariesToUserAccessAsync(
-                            userConfig.UserId,
-                            result.SourcesWithoutMirrors,
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                }
-            }
-
-            // Reconcile user access after cleanup
-            await _libraryAccessService.ReconcileAllUsersAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        return Ok(new CleanupResult
-        {
-            CleanedUpMirrors = result.CleanedUpMirrors,
-            TotalCleaned = result.TotalCleaned
-        });
     }
 
     #endregion
@@ -840,28 +800,6 @@ public class PluginSettings
     /// Gets or sets whether LDAP integration is enabled.
     /// </summary>
     public bool EnableLdapIntegration { get; set; }
-
-    /// <summary>
-    /// Gets or sets the mirror sync interval in hours.
-    /// Note: Mirrors are also synced automatically after library scans.
-    /// </summary>
-    public int MirrorSyncIntervalHours { get; set; }
-}
-
-/// <summary>
-/// Result of cleanup operation.
-/// </summary>
-public class CleanupResult
-{
-    /// <summary>
-    /// Gets or sets the list of cleaned up mirrors.
-    /// </summary>
-    public List<string> CleanedUpMirrors { get; set; } = new List<string>();
-
-    /// <summary>
-    /// Gets or sets the total number of mirrors cleaned up.
-    /// </summary>
-    public int TotalCleaned { get; set; }
 }
 
 #endregion

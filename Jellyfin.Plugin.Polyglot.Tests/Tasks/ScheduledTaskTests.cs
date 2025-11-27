@@ -37,18 +37,15 @@ public class MirrorSyncTaskTests : IDisposable
     }
 
     [Fact]
-    public void DefaultTriggers_UsesConfiguredInterval()
+    public void DefaultTriggers_Returns6HourInterval()
     {
-        // Arrange
-        _context.Configuration.MirrorSyncIntervalHours = 12;
-
         // Act
         var triggers = _task.GetDefaultTriggers().ToList();
 
         // Assert
         triggers.Should().ContainSingle();
         triggers[0].Type.Should().Be(TaskTriggerInfo.TriggerInterval);
-        // Note: The actual interval comes from Plugin.Instance which is set up in context
+        triggers[0].IntervalTicks.Should().Be(TimeSpan.FromHours(6).Ticks);
     }
 
     [Fact]

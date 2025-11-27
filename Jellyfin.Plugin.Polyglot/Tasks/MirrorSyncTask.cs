@@ -40,14 +40,12 @@ public class MirrorSyncTask : IScheduledTask
     /// <inheritdoc />
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
     {
-        var intervalHours = Plugin.Instance?.Configuration.MirrorSyncIntervalHours ?? 6;
-
         return new[]
         {
             new TaskTriggerInfo
             {
                 Type = TaskTriggerInfo.TriggerInterval,
-                IntervalTicks = TimeSpan.FromHours(intervalHours).Ticks
+                IntervalTicks = TimeSpan.FromHours(6).Ticks
             }
         };
     }
