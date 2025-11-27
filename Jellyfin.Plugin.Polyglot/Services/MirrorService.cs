@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Models;
-using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
@@ -726,46 +725,44 @@ public class MirrorService : IMirrorService
     }
 
     /// <summary>
-    /// Triggers a full refresh/scan of a library.
-    /// This mimics the behavior of POST /Items/{id}/Refresh with full refresh options.
+    /// Triggers a library scan to discover files on the filesystem and fetch metadata.
+    /// This uses QueueRefresh with FullRefresh options, which matches the behavior of
+    /// POST /Items/{id}/Refresh?MetadataRefreshMode=FullRefresh&amp;ImageRefreshMode=FullRefresh&amp;...
     /// </summary>
-    private async Task RefreshLibraryAsync(Guid libraryId, CancellationToken cancellationToken)
+    private Task RefreshLibraryAsync(Guid libraryId, CancellationToken cancellationToken)
     {
-        // Get the library item from the library manager
-        var libraryItem = _libraryManager.GetItemById(libraryId);
-        if (libraryItem == null)
-        {
-            _logger.LogWarning("Could not find library item {LibraryId} to refresh", libraryId);
-            return;
-        }
-
-        _logger.LogInformation("Triggering full refresh for library {LibraryName} ({LibraryId})",
-            libraryItem.Name, libraryId);
+        _logger.LogInformation("Queueing library refresh for {LibraryId}", libraryId);
 
         try
         {
-            // Create refresh options matching the API request:
-            // Recursive=true, ImageRefreshMode=FullRefresh, MetadataRefreshMode=FullRefresh,
-            // ReplaceAllImages=true, ReplaceAllMetadata=true
+            // Use the same approach as Jellyfin's ItemRefreshController:
+            // QueueRefresh with FullRefresh mode discovers new files AND fetches metadata.
+            // This matches the working API call:
+            // POST /Items/{id}/Refresh?MetadataRefreshMode=FullRefresh&ImageRefreshMode=FullRefresh&ReplaceAllMetadata=true&ReplaceAllImages=true
             var refreshOptions = new MetadataRefreshOptions(new DirectoryService(_fileSystem))
             {
                 MetadataRefreshMode = MetadataRefreshMode.FullRefresh,
                 ImageRefreshMode = MetadataRefreshMode.FullRefresh,
                 ReplaceAllMetadata = true,
                 ReplaceAllImages = true,
-                // Recursive is handled by RefreshFullItem when called on a folder
+                ForceSave = true,
+                IsAutomated = false,
+                RemoveOldMetadata = true
             };
 
-            // Queue the refresh - this is an async operation that Jellyfin will process
-            await _providerManager.RefreshFullItem(libraryItem, refreshOptions, cancellationToken).ConfigureAwait(false);
+            // QueueRefresh queues the refresh to be processed asynchronously (like the API does)
+            // Using Low priority to let the filesystem/Jellyfin settle after hardlink creation
+            _providerManager.QueueRefresh(libraryId, refreshOptions, RefreshPriority.Low);
 
-            _logger.LogInformation("Successfully queued refresh for library {LibraryName}", libraryItem.Name);
+            _logger.LogInformation("Successfully queued library refresh for {LibraryId}", libraryId);
         }
         catch (Exception ex)
         {
             // Log but don't fail the mirror creation - the library exists, just the scan didn't start
-            _logger.LogWarning(ex, "Failed to trigger refresh for library {LibraryName}. The library was created but may need a manual scan.", libraryItem.Name);
+            _logger.LogWarning(ex, "Failed to queue refresh for library {LibraryId}. The library was created but may need a manual scan.", libraryId);
         }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
