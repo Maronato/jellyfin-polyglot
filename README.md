@@ -18,6 +18,7 @@ Polyglot creates language-specific "mirror" libraries using filesystem hardlinks
 
 -   **Zero-Copy Mirroring** — Hardlinks share actual file data, mirrors use negligible disk space
 -   **Per-User Language Control** — Each user sees only libraries matching their assigned language
+-   **Watch History Preserved** — Watch progress syncs across source and mirror libraries
 -   **Automatic Sync** — Mirrors update after library scans and on a configurable schedule
 -   **LDAP Integration** — Auto-assign languages based on LDAP group membership
 
@@ -117,7 +118,6 @@ Mirrors stay in sync through:
 
 ## Known Limitations
 
--   **Watch history doesn't transfer**: Mirror libraries have different item IDs, so switching languages loses watch progress
 -   **Hardlinks are filesystem-bound**: Source and mirror paths must be on the same filesystem
 -   **LDAP requires separate plugin**: Install [jellyfin-plugin-ldapauth](https://github.com/jellyfin/jellyfin-plugin-ldapauth) first
 
