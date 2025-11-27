@@ -768,7 +768,9 @@
                     Dashboard.showLoadingMsg();
                     this.apiPost('Polyglot/Alternatives', data).then(function() {
                         self.closeDialog('addAlternativeDialog');
+                        // Reload alternatives first, then users (which depends on alternatives for dropdown)
                         self.loadAlternatives();
+                        self.loadUsers();
                         Dashboard.hideLoadingMsg();
                     }).catch(function(e) {
                         Dashboard.hideLoadingMsg();
@@ -825,6 +827,7 @@
                             self.apiDelete('Polyglot/Alternatives/' + altId + '?deleteLibraries=true&deleteFiles=true').then(function() {
                                 self.loadAlternatives();
                                 self.loadLibraries();
+                                self.loadUsers();
                                 Dashboard.hideLoadingMsg();
                             });
                         }
