@@ -226,6 +226,18 @@ public class PolyglotController : ControllerBase
             return BadRequest("Source library not found");
         }
 
+        // Prevent mirroring a mirror library
+        if (sourceLibrary.IsMirror)
+        {
+            return BadRequest("Cannot create a mirror of a mirror library. Please select a source library.");
+        }
+
+        // Check if this alternative already has a mirror for this source library
+        if (alternative.MirroredLibraries.Any(m => m.SourceLibraryId == sourceLibraryId))
+        {
+            return BadRequest($"This language alternative already has a mirror for '{sourceLibrary.Name}'. Each source library can only be mirrored once per language.");
+        }
+
         var mirror = new LibraryMirror
         {
             Id = Guid.NewGuid(),

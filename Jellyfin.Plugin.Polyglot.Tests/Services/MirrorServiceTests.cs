@@ -3,7 +3,9 @@ using Jellyfin.Plugin.Polyglot.Models;
 using Jellyfin.Plugin.Polyglot.Services;
 using Jellyfin.Plugin.Polyglot.Tests.TestHelpers;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.IO;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -16,13 +18,17 @@ namespace Jellyfin.Plugin.Polyglot.Tests.Services;
 public class MirrorServiceValidationTests
 {
     private readonly Mock<ILibraryManager> _libraryManagerMock;
+    private readonly Mock<IProviderManager> _providerManagerMock;
+    private readonly Mock<IFileSystem> _fileSystemMock;
     private readonly MirrorService _service;
 
     public MirrorServiceValidationTests()
     {
         _libraryManagerMock = new Mock<ILibraryManager>();
+        _providerManagerMock = new Mock<IProviderManager>();
+        _fileSystemMock = new Mock<IFileSystem>();
         var logger = new Mock<ILogger<MirrorService>>();
-        _service = new MirrorService(_libraryManagerMock.Object, logger.Object);
+        _service = new MirrorService(_libraryManagerMock.Object, _providerManagerMock.Object, _fileSystemMock.Object, logger.Object);
     }
 
     #region ValidateMirrorConfiguration - Input validation
@@ -109,6 +115,8 @@ public class MirrorServiceFileOperationTests : IDisposable
 {
     private readonly string _tempDir;
     private readonly Mock<ILibraryManager> _libraryManagerMock;
+    private readonly Mock<IProviderManager> _providerManagerMock;
+    private readonly Mock<IFileSystem> _fileSystemMock;
     private readonly MirrorService _service;
 
     public MirrorServiceFileOperationTests()
@@ -117,8 +125,10 @@ public class MirrorServiceFileOperationTests : IDisposable
         Directory.CreateDirectory(_tempDir);
 
         _libraryManagerMock = new Mock<ILibraryManager>();
+        _providerManagerMock = new Mock<IProviderManager>();
+        _fileSystemMock = new Mock<IFileSystem>();
         var logger = new Mock<ILogger<MirrorService>>();
-        _service = new MirrorService(_libraryManagerMock.Object, logger.Object);
+        _service = new MirrorService(_libraryManagerMock.Object, _providerManagerMock.Object, _fileSystemMock.Object, logger.Object);
     }
 
     public void Dispose()
@@ -384,14 +394,18 @@ public class MirrorServiceLibraryInfoTests : IDisposable
 {
     private readonly PluginTestContext _context;
     private readonly Mock<ILibraryManager> _libraryManagerMock;
+    private readonly Mock<IProviderManager> _providerManagerMock;
+    private readonly Mock<IFileSystem> _fileSystemMock;
     private readonly MirrorService _service;
 
     public MirrorServiceLibraryInfoTests()
     {
         _context = new PluginTestContext();
         _libraryManagerMock = new Mock<ILibraryManager>();
+        _providerManagerMock = new Mock<IProviderManager>();
+        _fileSystemMock = new Mock<IFileSystem>();
         var logger = new Mock<ILogger<MirrorService>>();
-        _service = new MirrorService(_libraryManagerMock.Object, logger.Object);
+        _service = new MirrorService(_libraryManagerMock.Object, _providerManagerMock.Object, _fileSystemMock.Object, logger.Object);
     }
 
     public void Dispose() => _context.Dispose();
@@ -458,3 +472,111 @@ public class MirrorServiceLibraryInfoTests : IDisposable
         mirror.LanguageAlternativeId.Should().Be(alternative.Id);
     }
 }
+
+/// <summary>
+/// Tests for CleanupOrphanedMirrorsAsync - ensuring orphan mirrors are removed
+/// when Jellyfin libraries are deleted externally (e.g., via Jellyfin's UI).
+/// </summary>
+public class MirrorServiceCleanupTests : IDisposable
+{
+    private readonly PluginTestContext _context;
+    private readonly Mock<ILibraryManager> _libraryManagerMock;
+    private readonly Mock<IProviderManager> _providerManagerMock;
+    private readonly Mock<IFileSystem> _fileSystemMock;
+    private readonly MirrorService _service;
+
+    public MirrorServiceCleanupTests()
+    {
+        _context = new PluginTestContext();
+        _libraryManagerMock = new Mock<ILibraryManager>();
+        _providerManagerMock = new Mock<IProviderManager>();
+        _fileSystemMock = new Mock<IFileSystem>();
+        var logger = new Mock<ILogger<MirrorService>>();
+        _service = new MirrorService(_libraryManagerMock.Object, _providerManagerMock.Object, _fileSystemMock.Object, logger.Object);
+    }
+
+    public void Dispose() => _context.Dispose();
+
+    [Fact]
+    public async Task CleanupOrphanedMirrors_TargetLibraryMissing_RemovesMirrorConfig()
+    {
+        // Arrange
+        var sourceId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+
+        var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+        var mirror = _context.AddMirror(
+            alternative,
+            sourceId,
+            "Movies",
+            targetLibraryId: targetId,
+            targetPath: "/media/portuguese/movies");
+
+        // Simulate Jellyfin state: source library still exists, target library was deleted
+        _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>
+        {
+            new()
+            {
+                ItemId = sourceId.ToString(),
+                Name = "Movies",
+                CollectionType = CollectionTypeOptions.movies,
+                Locations = new[] { "/media/movies" },
+                LibraryOptions = new MediaBrowser.Model.Configuration.LibraryOptions()
+            }
+        });
+
+        // Act
+        var result = await _service.CleanupOrphanedMirrorsAsync();
+
+        // Assert - mirror should be removed from configuration
+        result.TotalCleaned.Should().Be(1);
+        result.CleanedUpMirrors.Should().ContainSingle()
+            .Which.Should().Contain(mirror.TargetLibraryName)
+            .And.Contain("mirror deleted");
+
+        alternative.MirroredLibraries.Should().BeEmpty("orphaned mirror config should be removed");
+
+        // Source library still exists but now has no mirrors
+        result.SourcesWithoutMirrors.Should().ContainSingle()
+            .Which.Should().Be(sourceId);
+    }
+
+    [Fact]
+    public async Task CleanupOrphanedMirrors_SourceLibraryMissing_DeletesMirrorFilesAndConfig()
+    {
+        // Arrange
+        var sourceId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+
+        var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+
+        // Use a real temp directory so we can verify deletion behavior
+        var tempDir = Path.Combine(Path.GetTempPath(), "multilang_cleanup_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var mirror = _context.AddMirror(
+            alternative,
+            sourceId,
+            "Movies",
+            targetLibraryId: targetId,
+            targetPath: tempDir);
+
+        // Simulate Jellyfin state: both source & target libraries missing
+        _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>());
+
+        // Act
+        var result = await _service.CleanupOrphanedMirrorsAsync();
+
+        // Assert - mirror should be removed from configuration
+        result.TotalCleaned.Should().Be(1);
+        result.CleanedUpMirrors.Should().ContainSingle()
+            .Which.Should().Contain(mirror.TargetLibraryName)
+            .And.Contain("source deleted");
+
+        alternative.MirroredLibraries.Should().BeEmpty();
+
+        // Files for the mirror should be deleted when the source is gone
+        Directory.Exists(tempDir).Should().BeFalse("mirror files should be deleted when source library is deleted");
+    }
+}
+

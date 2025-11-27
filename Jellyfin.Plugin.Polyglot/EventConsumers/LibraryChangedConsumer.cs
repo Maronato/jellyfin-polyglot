@@ -66,19 +66,28 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
             return;
         }
 
-        // Check if this is a virtual folder (library) being removed
-        if (e.Item is AggregateFolder)
+        // Check if this is a library-related folder being removed
+        // CollectionFolder = individual virtual folder (library) in Jellyfin
+        // Note: When a library is deleted via RemoveVirtualFolder with refreshLibrary=true,
+        // Jellyfin calls ValidateTopLibraryFolders which may delete the CollectionFolder
+        // directly from the database without firing ItemRemoved. So this handler may not
+        // always be called. Periodic cleanup via scheduled tasks is more reliable.
+        if (e.Item is CollectionFolder || e.Item is AggregateFolder)
         {
+            _logger.LogDebug("Library folder removed: {FolderName} (Type: {FolderType})", e.Item.Name, e.Item.GetType().Name);
+
             // Run async cleanup in background
             _ = Task.Run(async () =>
             {
                 try
                 {
+                    // Small delay to ensure Jellyfin has finished processing the deletion
+                    await Task.Delay(500).ConfigureAwait(false);
                     await CleanupOrphanedMirrorsAsync(CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to cleanup orphaned mirrors");
+                    _logger.LogError(ex, "Failed to cleanup orphaned mirrors after library removal");
                 }
             });
         }

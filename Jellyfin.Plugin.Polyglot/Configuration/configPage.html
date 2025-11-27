@@ -139,7 +139,7 @@
                         </div>
 
                         <div class="verticalSection">
-                            <button is="emby-collapse" class="emby-collapse" title="Advanced Settings">
+                            <button type="button" is="emby-collapse" class="emby-collapse" title="Advanced Settings">
                                 <span class="collapseTitle">Advanced Settings</span>
                             </button>
                             <div class="collapseContent" style="display: none;">
@@ -150,19 +150,19 @@
                                         Excluded files will not be hardlinked - typically metadata and images that should be language-specific.
                                     </p>
                                     
-                                    <div class="inputContainer">
-                                        <label class="inputLabel inputLabelUnfocused" for="excludedExtensions">Excluded File Extensions</label>
-                                        <textarea id="excludedExtensions" is="emby-textarea" rows="4" style="font-family: monospace;"></textarea>
+                                    <div class="inputContainer" style="margin-bottom: 1.5em;">
+                                        <label class="inputLabel inputLabelUnfocused" for="excludedExtensions" style="display: block; margin-bottom: 0.5em;">Excluded File Extensions</label>
+                                        <textarea id="excludedExtensions" is="emby-textarea" rows="6" style="font-family: monospace; width: 100%; box-sizing: border-box;"></textarea>
                                         <div class="fieldDescription">File extensions to exclude from hardlinking (one per line, include the dot). Default: .nfo, .jpg, .jpeg, .png, .gif, .webp, .tbn, .bmp</div>
                                     </div>
                                     
-                                    <div class="inputContainer">
-                                        <label class="inputLabel inputLabelUnfocused" for="excludedDirectories">Excluded Directory Names</label>
-                                        <textarea id="excludedDirectories" is="emby-textarea" rows="4" style="font-family: monospace;"></textarea>
+                                    <div class="inputContainer" style="margin-bottom: 1.5em;">
+                                        <label class="inputLabel inputLabelUnfocused" for="excludedDirectories" style="display: block; margin-bottom: 0.5em;">Excluded Directory Names</label>
+                                        <textarea id="excludedDirectories" is="emby-textarea" rows="6" style="font-family: monospace; width: 100%; box-sizing: border-box;"></textarea>
                                         <div class="fieldDescription">Directory names to exclude from mirroring (one per line). Default: extrafanart, extrathumbs, .trickplay, metadata, .actors</div>
                                     </div>
                                     
-                                    <button is="emby-button" type="button" class="raised" id="btnResetExclusions" style="margin-top: 0.5em;">
+                                    <button is="emby-button" type="button" class="raised" id="btnResetExclusions">
                                         <span>Reset to Defaults</span>
                                     </button>
                                 </div>
@@ -682,9 +682,28 @@
                     var alternative = this.alternatives.find(function(a) { return a.Id === altId; });
                     document.getElementById('mirrorAlternativeId').value = altId;
                     
+                    // Get IDs of libraries that already have mirrors in this alternative
+                    var alreadyMirroredIds = new Set();
+                    if (alternative && alternative.MirroredLibraries) {
+                        alternative.MirroredLibraries.forEach(function(m) {
+                            alreadyMirroredIds.add(m.SourceLibraryId);
+                        });
+                    }
+                    
                     var select = document.getElementById('mirrorSourceLibrary');
                     select.innerHTML = '';
-                    var availableLibs = this.libraries.filter(function(lib) { return !lib.IsMirror; });
+                    
+                    // Filter: not a mirror AND not already mirrored for this alternative
+                    var availableLibs = this.libraries.filter(function(lib) { 
+                        return !lib.IsMirror && !alreadyMirroredIds.has(lib.Id); 
+                    });
+                    
+                    if (availableLibs.length === 0) {
+                        select.innerHTML = '<option value="" disabled>No available libraries</option>';
+                        Dashboard.alert('All source libraries already have mirrors for this language alternative.');
+                        return;
+                    }
+                    
                     availableLibs.forEach(function(lib) {
                         select.innerHTML += '<option value="' + lib.Id + '">' + lib.Name + '</option>';
                     });
@@ -1242,7 +1261,12 @@
             .collapseContent {
                 border-left: 2px solid rgba(0,164,220,0.3);
                 margin-left: 0.5em;
-                padding-left: 1em;
+                margin-top: 1em;
+                padding: 1em 1.5em 1.5em 1.5em;
+            }
+            .collapseContent textarea {
+                min-height: 120px;
+                resize: vertical;
             }
         </style>
     </div>

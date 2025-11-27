@@ -85,6 +85,34 @@ public class MirrorSyncTaskTests : IDisposable
     }
 
     [Fact]
+    public async Task ExecuteAsync_RunsCleanupBeforeSync()
+    {
+        // Arrange
+        var alt = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+        var progress = new Progress<double>();
+
+        var callOrder = new List<string>();
+
+        _mirrorServiceMock
+            .Setup(s => s.CleanupOrphanedMirrorsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OrphanCleanupResult())
+            .Callback(() => callOrder.Add("cleanup"));
+
+        _mirrorServiceMock
+            .Setup(s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask)
+            .Callback(() => callOrder.Add("sync"));
+
+        // Act
+        await _task.ExecuteAsync(progress, CancellationToken.None);
+
+        // Assert - cleanup must run before any sync
+        callOrder.Should().NotBeEmpty();
+        callOrder[0].Should().Be("cleanup");
+        callOrder.Should().Contain("sync");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_OneCancelled_DoesNotThrow()
     {
         // Arrange

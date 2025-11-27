@@ -1422,6 +1422,99 @@ public class PolyglotControllerTests : IDisposable
             "error message should mention filesystem requirement");
     }
 
+    [Fact]
+    public async Task AddLibraryMirror_SourceIsMirrorLibrary_ShouldReturn400()
+    {
+        // DESIRED BEHAVIOR: Cannot create a mirror of a mirror library.
+        // Only source (non-mirror) libraries can be mirrored.
+        
+        // Arrange
+        var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+        var mirrorLibraryId = Guid.NewGuid();
+        
+        _mirrorServiceMock
+            .Setup(s => s.ValidateMirrorConfiguration(mirrorLibraryId, It.IsAny<string>()))
+            .Returns((true, (string?)null));
+        
+        // Return the library as a mirror (IsMirror = true)
+        _mirrorServiceMock
+            .Setup(s => s.GetJellyfinLibraries())
+            .Returns(new List<LibraryInfo>
+            {
+                new LibraryInfo 
+                { 
+                    Id = mirrorLibraryId, 
+                    Name = "Filmes (Portuguese)",
+                    IsMirror = true,  // This is a mirror library
+                    LanguageAlternativeId = Guid.NewGuid()
+                }
+            });
+        
+        var request = new AddLibraryMirrorRequest
+        {
+            SourceLibraryId = mirrorLibraryId.ToString(),
+            TargetPath = "/data/test",
+            TargetLibraryName = "Test"
+        };
+
+        // Act
+        var result = await _controller.AddLibraryMirror(alternative.Id, request);
+
+        // Assert
+        result.Result.Should().BeOfType<BadRequestObjectResult>(
+            "mirroring a mirror should be rejected with 400");
+        var badRequest = (BadRequestObjectResult)result.Result!;
+        ((string)badRequest.Value!).Should().Contain("mirror",
+            "error message should mention that mirrors cannot be mirrored");
+    }
+
+    [Fact]
+    public async Task AddLibraryMirror_DuplicateMirrorForSameSource_ShouldReturn400()
+    {
+        // DESIRED BEHAVIOR: Each source library can only be mirrored once per language alternative.
+        // Attempting to create a second mirror for the same source should return 400.
+        
+        // Arrange
+        var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+        var sourceLibraryId = Guid.NewGuid();
+        
+        // Add an existing mirror for this source library
+        _context.AddMirror(alternative, sourceLibraryId, "Movies");
+        
+        _mirrorServiceMock
+            .Setup(s => s.ValidateMirrorConfiguration(sourceLibraryId, It.IsAny<string>()))
+            .Returns((true, (string?)null));
+        
+        _mirrorServiceMock
+            .Setup(s => s.GetJellyfinLibraries())
+            .Returns(new List<LibraryInfo>
+            {
+                new LibraryInfo 
+                { 
+                    Id = sourceLibraryId, 
+                    Name = "Movies",
+                    IsMirror = false
+                }
+            });
+        
+        var request = new AddLibraryMirrorRequest
+        {
+            SourceLibraryId = sourceLibraryId.ToString(),
+            TargetPath = "/data/test2",
+            TargetLibraryName = "Movies Copy"
+        };
+
+        // Act
+        var result = await _controller.AddLibraryMirror(alternative.Id, request);
+
+        // Assert
+        result.Result.Should().BeOfType<BadRequestObjectResult>(
+            "duplicate mirror for same source should be rejected with 400");
+        var badRequest = (BadRequestObjectResult)result.Result!;
+        ((string)badRequest.Value!).Should().Contain("already has a mirror",
+            "error message should indicate duplicate mirror");
+    }
+
     #endregion
 
     #region SyncAlternative - Error Handling

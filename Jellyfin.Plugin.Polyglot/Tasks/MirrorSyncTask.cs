@@ -57,6 +57,22 @@ public class MirrorSyncTask : IScheduledTask
     {
         _logger.LogInformation("Starting mirror sync task");
 
+        // First, cleanup any orphaned mirrors (e.g., if a library was deleted externally)
+        // This is important because the ItemRemoved event may not fire when a library is
+        // deleted via Jellyfin's UI (ValidateTopLibraryFolders deletes directly from DB)
+        try
+        {
+            var cleanupResult = await _mirrorService.CleanupOrphanedMirrorsAsync(cancellationToken).ConfigureAwait(false);
+            if (cleanupResult.TotalCleaned > 0)
+            {
+                _logger.LogInformation("Cleaned up {Count} orphaned mirrors before sync", cleanupResult.TotalCleaned);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to cleanup orphaned mirrors, continuing with sync");
+        }
+
         var config = Plugin.Instance?.Configuration;
         if (config == null)
         {

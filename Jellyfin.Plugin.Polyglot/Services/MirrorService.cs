@@ -7,8 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Models;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.IO;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Polyglot.Services;
@@ -19,15 +22,23 @@ namespace Jellyfin.Plugin.Polyglot.Services;
 public class MirrorService : IMirrorService
 {
     private readonly ILibraryManager _libraryManager;
+    private readonly IProviderManager _providerManager;
+    private readonly IFileSystem _fileSystem;
     private readonly ILogger<MirrorService> _logger;
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _mirrorLocks = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MirrorService"/> class.
     /// </summary>
-    public MirrorService(ILibraryManager libraryManager, ILogger<MirrorService> logger)
+    public MirrorService(
+        ILibraryManager libraryManager,
+        IProviderManager providerManager,
+        IFileSystem fileSystem,
+        ILogger<MirrorService> logger)
     {
         _libraryManager = libraryManager;
+        _providerManager = providerManager;
+        _fileSystem = fileSystem;
         _logger = logger;
     }
 
@@ -266,7 +277,10 @@ public class MirrorService : IMirrorService
             {
                 try
                 {
-                    _libraryManager.RemoveVirtualFolder(mirror.TargetLibraryName, false);
+                    // Use refreshLibrary: true to trigger Jellyfin's internal cleanup
+                    // This ensures all references to the library are properly removed
+                    // (similar to what happens when deleting via Jellyfin's UI)
+                    _libraryManager.RemoveVirtualFolder(mirror.TargetLibraryName, true);
                     _logger.LogInformation("Removed Jellyfin library {LibraryName}", mirror.TargetLibraryName);
                 }
                 catch (Exception ex)
@@ -701,10 +715,57 @@ public class MirrorService : IMirrorService
             {
                 Path = mirror.TargetPath
             });
+
+            // Trigger a full library scan for the newly created library
+            // This is necessary because AddVirtualFolder doesn't always trigger a scan
+            await RefreshLibraryAsync(mirror.TargetLibraryId.Value, cancellationToken).ConfigureAwait(false);
         }
 
         _logger.LogInformation("Created Jellyfin library {LibraryName} with ID {LibraryId}",
             mirror.TargetLibraryName, mirror.TargetLibraryId);
+    }
+
+    /// <summary>
+    /// Triggers a full refresh/scan of a library.
+    /// This mimics the behavior of POST /Items/{id}/Refresh with full refresh options.
+    /// </summary>
+    private async Task RefreshLibraryAsync(Guid libraryId, CancellationToken cancellationToken)
+    {
+        // Get the library item from the library manager
+        var libraryItem = _libraryManager.GetItemById(libraryId);
+        if (libraryItem == null)
+        {
+            _logger.LogWarning("Could not find library item {LibraryId} to refresh", libraryId);
+            return;
+        }
+
+        _logger.LogInformation("Triggering full refresh for library {LibraryName} ({LibraryId})",
+            libraryItem.Name, libraryId);
+
+        try
+        {
+            // Create refresh options matching the API request:
+            // Recursive=true, ImageRefreshMode=FullRefresh, MetadataRefreshMode=FullRefresh,
+            // ReplaceAllImages=true, ReplaceAllMetadata=true
+            var refreshOptions = new MetadataRefreshOptions(new DirectoryService(_fileSystem))
+            {
+                MetadataRefreshMode = MetadataRefreshMode.FullRefresh,
+                ImageRefreshMode = MetadataRefreshMode.FullRefresh,
+                ReplaceAllMetadata = true,
+                ReplaceAllImages = true,
+                // Recursive is handled by RefreshFullItem when called on a folder
+            };
+
+            // Queue the refresh - this is an async operation that Jellyfin will process
+            await _providerManager.RefreshFullItem(libraryItem, refreshOptions, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation("Successfully queued refresh for library {LibraryName}", libraryItem.Name);
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail the mirror creation - the library exists, just the scan didn't start
+            _logger.LogWarning(ex, "Failed to trigger refresh for library {LibraryName}. The library was created but may need a manual scan.", libraryItem.Name);
+        }
     }
 
     /// <summary>
