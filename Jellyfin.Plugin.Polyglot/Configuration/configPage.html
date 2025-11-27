@@ -105,56 +105,62 @@
                 <div id="settingsTab" class="tabContent" style="display: none;">
                     <form id="settingsForm">
                         <div class="verticalSection">
-                            <h3 class="sectionTitle">Mirror Settings</h3>
-
-                            <div class="inputContainer">
-                                <label class="inputLabel inputLabelUnfocused" for="mirrorSyncInterval">Mirror Sync Interval (hours)</label>
-                                <input id="mirrorSyncInterval" type="number" is="emby-input" min="1" value="6" />
-                                <div class="fieldDescription">How often to sync mirror libraries with source libraries.</div>
-                            </div>
-                        </div>
-
-                        <div class="verticalSection">
-                            <button type="button" is="emby-collapse" class="emby-collapse" title="Advanced Settings">
-                                <span class="collapseTitle">Advanced Settings</span>
-                            </button>
-                            <div class="collapseContent" style="display: none;">
-                                <div class="verticalSection" style="margin-top: 1em;">
-                                    <h3 class="sectionTitle">File Exclusions</h3>
-                                    <p class="fieldDescription" style="margin-bottom: 1em;">
-                                        Customize which files and directories are excluded from mirroring. 
-                                        Excluded files will not be hardlinked - typically metadata and images that should be language-specific.
-                                    </p>
-                                    
-                                    <div class="inputContainer" style="margin-bottom: 1.5em;">
-                                        <label class="inputLabel inputLabelUnfocused" for="excludedExtensions" style="display: block; margin-bottom: 0.5em;">Excluded File Extensions</label>
-                                        <textarea id="excludedExtensions" is="emby-textarea" rows="6" style="font-family: monospace; width: 100%; box-sizing: border-box;"></textarea>
-                                        <div class="fieldDescription">File extensions to exclude from hardlinking (one per line, include the dot). Default: .nfo, .jpg, .jpeg, .png, .gif, .webp, .tbn, .bmp</div>
-                                    </div>
-                                    
-                                    <div class="inputContainer" style="margin-bottom: 1.5em;">
-                                        <label class="inputLabel inputLabelUnfocused" for="excludedDirectories" style="display: block; margin-bottom: 0.5em;">Excluded Directory Names</label>
-                                        <textarea id="excludedDirectories" is="emby-textarea" rows="6" style="font-family: monospace; width: 100%; box-sizing: border-box;"></textarea>
-                                        <div class="fieldDescription">Directory names to exclude from mirroring (one per line). Default: extrafanart, extrathumbs, .trickplay, metadata, .actors</div>
-                                    </div>
-                                    
-                                    <button is="emby-button" type="button" class="raised" id="btnResetExclusions">
-                                        <span>Reset to Defaults</span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="verticalSection">
-                            <h3 class="sectionTitle">Maintenance</h3>
+                            <h3 class="sectionTitle">New User Defaults</h3>
                             <p class="fieldDescription" style="margin-bottom: 1em;">
-                                If you delete a source library or a mirror library manually, the plugin will detect this automatically.
-                                You can also manually cleanup orphaned mirrors using the button below.
+                                Configure how new users are handled when they are created in Jellyfin.
                             </p>
-                            <button is="emby-button" type="button" class="raised" id="btnCleanupMirrors">
-                                <span>Cleanup Orphaned Mirrors</span>
+                            
+                            <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom: 1em;">
+                                <label class="emby-checkbox-label">
+                                    <input id="autoManageNewUsers" type="checkbox" is="emby-checkbox" />
+                                    <span>Automatically manage new users</span>
+                                </label>
+                                <div class="fieldDescription">When enabled, newly created users will be automatically added to plugin management with the default language below. LDAP assignments (if enabled) take priority.</div>
+                            </div>
+                            
+                            <div class="selectContainer" style="margin-bottom: 1em;">
+                                <label class="selectLabel" for="defaultLanguageAlternative">Default Language for New Users</label>
+                                <select id="defaultLanguageAlternative" is="emby-select">
+                                    <option value="">Default libraries (source only)</option>
+                                </select>
+                                <div class="fieldDescription">The language alternative assigned to new users when auto-manage is enabled.</div>
+                            </div>
+                        </div>
+
+                        <div class="verticalSection">
+                            <h3 class="sectionTitle">Sync Behavior</h3>
+                            
+                            <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom: 1em;">
+                                <label class="emby-checkbox-label">
+                                    <input id="syncAfterLibraryScan" type="checkbox" is="emby-checkbox" checked />
+                                    <span>Sync mirrors after library scans</span>
+                                </label>
+                                <div class="fieldDescription">When enabled, mirrors are automatically synced after Jellyfin completes a library scan. Disable this for large libraries where you prefer to control sync timing via scheduled tasks only.</div>
+                            </div>
+                        </div>
+
+                        <div class="verticalSection">
+                            <h3 class="sectionTitle">File Exclusions</h3>
+                            <p class="fieldDescription" style="margin-bottom: 1em;">
+                                Customize which files and directories are excluded from mirroring. 
+                                Excluded files will not be hardlinked - typically metadata and images that should be language-specific.
+                            </p>
+                            
+                            <div class="inputContainer" style="margin-bottom: 1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="excludedExtensions" style="display: block; margin-bottom: 0.5em;">Excluded File Extensions</label>
+                                <textarea id="excludedExtensions" is="emby-textarea" rows="6" style="font-family: monospace; width: 100%; box-sizing: border-box;"></textarea>
+                                <div class="fieldDescription">File extensions to exclude from hardlinking (one per line, include the dot).</div>
+                            </div>
+                            
+                            <div class="inputContainer" style="margin-bottom: 1.5em;">
+                                <label class="inputLabel inputLabelUnfocused" for="excludedDirectories" style="display: block; margin-bottom: 0.5em;">Excluded Directory Names</label>
+                                <textarea id="excludedDirectories" is="emby-textarea" rows="6" style="font-family: monospace; width: 100%; box-sizing: border-box;"></textarea>
+                                <div class="fieldDescription">Directory names to exclude from mirroring (one per line).</div>
+                            </div>
+                            
+                            <button is="emby-button" type="button" class="raised" id="btnResetExclusions">
+                                <span>Reset to Defaults</span>
                             </button>
-                            <div id="cleanupResult" class="fieldDescription" style="margin-top: 0.5em; display: none;"></div>
                         </div>
 
                         <div>
@@ -659,7 +665,24 @@
                     var self = this;
                     // Use built-in ApiClient method for plugin configuration
                     ApiClient.getPluginConfiguration(this.pluginUniqueId).then(function(config) {
-                        document.getElementById('mirrorSyncInterval').value = config.MirrorSyncIntervalHours || 6;
+                        // Load new user settings
+                        document.getElementById('autoManageNewUsers').checked = config.AutoManageNewUsers || false;
+                        
+                        // Populate default language dropdown
+                        var select = document.getElementById('defaultLanguageAlternative');
+                        select.innerHTML = '<option value="">Default libraries (source only)</option>';
+                        self.alternatives.forEach(function(alt) {
+                            select.innerHTML += '<option value="' + alt.Id + '">' + alt.Name + '</option>';
+                        });
+                        
+                        // Set selected value
+                        if (config.DefaultLanguageAlternativeId) {
+                            select.value = config.DefaultLanguageAlternativeId;
+                        }
+                        
+                        // Load sync behavior settings
+                        // Default to true if not set (backward compatibility)
+                        document.getElementById('syncAfterLibraryScan').checked = config.SyncMirrorsAfterLibraryScan !== false;
                         
                         // Load exclusion settings
                         var extensions = config.ExcludedExtensions || self.defaultExcludedExtensions;
@@ -954,40 +977,18 @@
                     );
                 },
 
-                cleanupOrphanedMirrors: function() {
-                    var self = this;
-                    Dashboard.showLoadingMsg();
-                    var resultDiv = document.getElementById('cleanupResult');
-                    resultDiv.style.display = 'none';
-                    
-                    this.apiPost('Polyglot/CleanupOrphanedMirrors', {}).then(function(response) {
-                        Dashboard.hideLoadingMsg();
-                        resultDiv.style.display = 'block';
-                        if (response.TotalCleaned === 0) {
-                            resultDiv.textContent = 'No orphaned mirrors found.';
-                            resultDiv.style.color = '#52b54b';
-                        } else {
-                            resultDiv.innerHTML = '<strong>Cleaned up ' + response.TotalCleaned + ' mirrors:</strong><br/>' + 
-                                response.CleanedUpMirrors.join('<br/>');
-                            resultDiv.style.color = '#f2b01e';
-                            // Reload the alternatives list
-                            self.loadAlternatives();
-                        }
-                    }).catch(function(e) {
-                        Dashboard.hideLoadingMsg();
-                        resultDiv.style.display = 'block';
-                        resultDiv.textContent = 'Failed to cleanup: ' + e.message;
-                        resultDiv.style.color = '#cc3333';
-                    });
-                },
-
                 saveSettings: function() {
                     var self = this;
                     Dashboard.showLoadingMsg();
                     // Use built-in ApiClient method for plugin configuration
                     ApiClient.getPluginConfiguration(this.pluginUniqueId).then(function(config) {
-                        // Update only the settings fields
-                        config.MirrorSyncIntervalHours = parseInt(document.getElementById('mirrorSyncInterval').value) || 6;
+                        // Save new user settings
+                        config.AutoManageNewUsers = document.getElementById('autoManageNewUsers').checked;
+                        var defaultLangValue = document.getElementById('defaultLanguageAlternative').value;
+                        config.DefaultLanguageAlternativeId = defaultLangValue || null;
+                        
+                        // Save sync behavior settings
+                        config.SyncMirrorsAfterLibraryScan = document.getElementById('syncAfterLibraryScan').checked;
                         
                         // Parse exclusion settings (split by newlines, filter empty, trim whitespace)
                         var extensionsText = document.getElementById('excludedExtensions').value;
@@ -1122,24 +1123,9 @@
                         self.enableAllUsers();
                     });
 
-                    // Cleanup orphaned mirrors button
-                    document.getElementById('btnCleanupMirrors').addEventListener('click', function() {
-                        self.cleanupOrphanedMirrors();
-                    });
-
                     // Reset exclusions button
                     document.getElementById('btnResetExclusions').addEventListener('click', function() {
                         self.resetExclusionsToDefaults();
-                    });
-
-                    // Advanced settings collapse toggle
-                    document.querySelectorAll('.emby-collapse').forEach(function(collapseBtn) {
-                        collapseBtn.addEventListener('click', function() {
-                            var content = this.nextElementSibling;
-                            var isExpanded = content.style.display !== 'none';
-                            content.style.display = isExpanded ? 'none' : 'block';
-                            this.classList.toggle('expanded', !isExpanded);
-                        });
                     });
 
                     // Test LDAP button

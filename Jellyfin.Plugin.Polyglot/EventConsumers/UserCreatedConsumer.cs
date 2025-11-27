@@ -41,49 +41,65 @@ public class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
             return;
         }
 
-        // Check if LDAP integration is enabled
-        if (!config.EnableLdapIntegration)
+        // First, try LDAP-based assignment if enabled
+        if (config.EnableLdapIntegration && _ldapIntegrationService.IsLdapPluginAvailable())
         {
-            _logger.LogDebug("LDAP integration disabled, skipping auto-assignment for {Username}", user.Username);
-            return;
+            try
+            {
+                var languageId = await _ldapIntegrationService.DetermineLanguageFromGroupsAsync(user.Username, CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                if (languageId.HasValue)
+                {
+                    await _userLanguageService.AssignLanguageAsync(
+                        user.Id,
+                        languageId.Value,
+                        "ldap",
+                        manuallySet: false,
+                        isPluginManaged: true,
+                        CancellationToken.None).ConfigureAwait(false);
+
+                    _logger.LogInformation(
+                        "Assigned language {LanguageId} to new user {Username} based on LDAP groups",
+                        languageId.Value,
+                        user.Username);
+                    return;
+                }
+
+                _logger.LogDebug("No LDAP group match found for new user {Username}", user.Username);
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogError(ex, "Failed to check LDAP groups for new user {Username}", user.Username);
+            }
         }
 
-        // Check if LDAP plugin is available
-        if (!_ldapIntegrationService.IsLdapPluginAvailable())
+        // Fall back to auto-manage if enabled
+        if (config.AutoManageNewUsers)
         {
-            _logger.LogDebug("LDAP plugin not available, skipping auto-assignment for {Username}", user.Username);
-            return;
-        }
-
-        try
-        {
-            // Try to determine language from LDAP groups
-            var languageId = await _ldapIntegrationService.DetermineLanguageFromGroupsAsync(user.Username, CancellationToken.None)
-                .ConfigureAwait(false);
-
-            if (languageId.HasValue)
+            try
             {
                 await _userLanguageService.AssignLanguageAsync(
                     user.Id,
-                    languageId.Value,
-                    "ldap",
+                    config.DefaultLanguageAlternativeId,
+                    "auto",
                     manuallySet: false,
                     isPluginManaged: true,
                     CancellationToken.None).ConfigureAwait(false);
 
+                var languageName = config.DefaultLanguageAlternativeId.HasValue
+                    ? config.LanguageAlternatives.Find(a => a.Id == config.DefaultLanguageAlternativeId.Value)?.Name ?? "Unknown"
+                    : "Default libraries";
+
                 _logger.LogInformation(
-                    "Assigned language {LanguageId} to new user {Username} based on LDAP groups",
-                    languageId.Value,
+                    "Auto-assigned {LanguageName} to new user {Username}",
+                    languageName,
                     user.Username);
             }
-            else
+            catch (System.Exception ex)
             {
-                _logger.LogDebug("No LDAP group match found for new user {Username}", user.Username);
+                _logger.LogError(ex, "Failed to auto-assign language for new user {Username}", user.Username);
             }
-        }
-        catch (System.Exception ex)
-        {
-            _logger.LogError(ex, "Failed to auto-assign language for new user {Username}", user.Username);
         }
     }
 }

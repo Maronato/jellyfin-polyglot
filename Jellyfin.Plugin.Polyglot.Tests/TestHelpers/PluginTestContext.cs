@@ -182,6 +182,25 @@ public class PluginTestContext : IDisposable
         return mirror;
     }
 
+    /// <summary>
+    /// Adds a library mirror to an alternative by ID.
+    /// </summary>
+    public LibraryMirror AddMirrorToAlternative(
+        Guid alternativeId,
+        Guid sourceLibraryId,
+        string sourceLibraryName,
+        Guid? targetLibraryId = null,
+        string targetPath = "/media/mirror")
+    {
+        var alternative = Configuration.LanguageAlternatives.FirstOrDefault(a => a.Id == alternativeId);
+        if (alternative == null)
+        {
+            throw new InvalidOperationException($"Language alternative {alternativeId} not found");
+        }
+
+        return AddMirror(alternative, sourceLibraryId, sourceLibraryName, targetLibraryId, targetPath);
+    }
+
     public void Dispose()
     {
         try

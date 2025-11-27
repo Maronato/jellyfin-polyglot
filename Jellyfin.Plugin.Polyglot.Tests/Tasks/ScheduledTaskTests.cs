@@ -189,3 +189,93 @@ public class UserLanguageSyncTaskTests : IDisposable
             Times.Never);
     }
 }
+
+/// <summary>
+/// Tests for MirrorPostScanTask.
+/// </summary>
+public class MirrorPostScanTaskTests : IDisposable
+{
+    private readonly PluginTestContext _context;
+    private readonly Mock<IMirrorService> _mirrorServiceMock;
+    private readonly MirrorPostScanTask _task;
+
+    public MirrorPostScanTaskTests()
+    {
+        _context = new PluginTestContext();
+        _mirrorServiceMock = new Mock<IMirrorService>();
+        var logger = new Mock<ILogger<MirrorPostScanTask>>();
+        _task = new MirrorPostScanTask(_mirrorServiceMock.Object, logger.Object);
+    }
+
+    public void Dispose() => _context.Dispose();
+
+    [Fact]
+    public async Task Run_WhenSyncAfterScanEnabled_SyncsMirrors()
+    {
+        // Arrange
+        _context.Configuration.SyncMirrorsAfterLibraryScan = true;
+        var alt = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+        _context.AddMirrorToAlternative(alt.Id, Guid.NewGuid(), "Movies");
+        var progress = new Progress<double>();
+
+        // Act
+        await _task.Run(progress, CancellationToken.None);
+
+        // Assert
+        _mirrorServiceMock.Verify(
+            s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WhenSyncAfterScanDisabled_DoesNotSyncMirrors()
+    {
+        // Arrange
+        _context.Configuration.SyncMirrorsAfterLibraryScan = false;
+        var alt = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+        _context.AddMirrorToAlternative(alt.Id, Guid.NewGuid(), "Movies");
+        var progress = new Progress<double>();
+
+        // Act
+        await _task.Run(progress, CancellationToken.None);
+
+        // Assert
+        _mirrorServiceMock.Verify(
+            s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Run_DefaultConfig_SyncsMirrors()
+    {
+        // Arrange - default config should have SyncMirrorsAfterLibraryScan = true
+        var alt = _context.AddLanguageAlternative("Portuguese", "pt-BR");
+        _context.AddMirrorToAlternative(alt.Id, Guid.NewGuid(), "Movies");
+        var progress = new Progress<double>();
+
+        // Act
+        await _task.Run(progress, CancellationToken.None);
+
+        // Assert
+        _mirrorServiceMock.Verify(
+            s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_NoMirrors_DoesNotSync()
+    {
+        // Arrange
+        _context.Configuration.SyncMirrorsAfterLibraryScan = true;
+        _context.AddLanguageAlternative("Portuguese", "pt-BR"); // No mirrors added
+        var progress = new Progress<double>();
+
+        // Act
+        await _task.Run(progress, CancellationToken.None);
+
+        // Assert - should skip alternatives with no mirrors
+        _mirrorServiceMock.Verify(
+            s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+}

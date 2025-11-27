@@ -1,4 +1,6 @@
 using FluentAssertions;
+using Jellyfin.Data.Entities;
+using Jellyfin.Data.Events.Users;
 using Jellyfin.Plugin.Polyglot.EventConsumers;
 using Jellyfin.Plugin.Polyglot.Models;
 using Jellyfin.Plugin.Polyglot.Services;
@@ -11,7 +13,7 @@ using Xunit;
 namespace Jellyfin.Plugin.Polyglot.Tests.EventConsumers;
 
 /// <summary>
-/// Tests for UserCreatedConsumer - LDAP auto-assignment behavior.
+/// Tests for UserCreatedConsumer - LDAP and auto-assignment behavior.
 /// </summary>
 public class UserCreatedConsumerTests : IDisposable
 {
@@ -35,27 +37,196 @@ public class UserCreatedConsumerTests : IDisposable
 
     public void Dispose() => _context.Dispose();
 
-    [Fact]
-    public void WhenLdapDisabled_DoesNotQueryLdap()
+    private static UserCreatedEventArgs CreateUserCreatedEvent(Guid userId, string username)
     {
-        // Arrange
-        _context.Configuration.EnableLdapIntegration = false;
-
-        // Assert - if LDAP is disabled, we shouldn't even check plugin availability
-        // The consumer should exit early without calling LDAP services
+        var user = new User(username, "default", "default");
+        // Use reflection to set the Id since it's likely read-only
+        typeof(User).GetProperty("Id")?.SetValue(user, userId);
+        return new UserCreatedEventArgs(user);
     }
 
     [Fact]
-    public void WhenLdapEnabled_ButPluginNotAvailable_DoesNotQueryGroups()
+    public async Task WhenLdapDisabledAndAutoManageDisabled_DoesNotAssignLanguage()
+    {
+        // Arrange
+        _context.Configuration.EnableLdapIntegration = false;
+        _context.Configuration.AutoManageNewUsers = false;
+        var eventArgs = CreateUserCreatedEvent(Guid.NewGuid(), "testuser");
+
+        // Act
+        await _consumer.OnEvent(eventArgs);
+
+        // Assert
+        _userLanguageServiceMock.Verify(
+            s => s.AssignLanguageAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<string>(),
+                It.IsAny<bool>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task WhenAutoManageEnabled_AssignsDefaultLanguage()
+    {
+        // Arrange
+        _context.Configuration.EnableLdapIntegration = false;
+        _context.Configuration.AutoManageNewUsers = true;
+        _context.Configuration.DefaultLanguageAlternativeId = null; // Default libraries
+
+        var userId = Guid.NewGuid();
+        var eventArgs = CreateUserCreatedEvent(userId, "testuser");
+
+        // Act
+        await _consumer.OnEvent(eventArgs);
+
+        // Assert
+        _userLanguageServiceMock.Verify(
+            s => s.AssignLanguageAsync(
+                userId,
+                null, // Default libraries
+                "auto",
+                false,
+                true,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task WhenAutoManageEnabledWithSpecificLanguage_AssignsThatLanguage()
+    {
+        // Arrange
+        var portugueseId = Guid.NewGuid();
+        _context.Configuration.EnableLdapIntegration = false;
+        _context.Configuration.AutoManageNewUsers = true;
+        _context.Configuration.DefaultLanguageAlternativeId = portugueseId;
+        _context.Configuration.LanguageAlternatives.Add(new LanguageAlternative
+        {
+            Id = portugueseId,
+            Name = "Portuguese"
+        });
+
+        var userId = Guid.NewGuid();
+        var eventArgs = CreateUserCreatedEvent(userId, "testuser");
+
+        // Act
+        await _consumer.OnEvent(eventArgs);
+
+        // Assert
+        _userLanguageServiceMock.Verify(
+            s => s.AssignLanguageAsync(
+                userId,
+                portugueseId,
+                "auto",
+                false,
+                true,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task WhenLdapMatchesGroup_AssignsLdapLanguage()
+    {
+        // Arrange
+        var portugueseId = Guid.NewGuid();
+        _context.Configuration.EnableLdapIntegration = true;
+        _context.Configuration.AutoManageNewUsers = true; // Also enabled, but LDAP should take priority
+        _context.Configuration.DefaultLanguageAlternativeId = null;
+
+        _ldapIntegrationServiceMock.Setup(s => s.IsLdapPluginAvailable()).Returns(true);
+        _ldapIntegrationServiceMock
+            .Setup(s => s.DetermineLanguageFromGroupsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(portugueseId);
+
+        var userId = Guid.NewGuid();
+        var eventArgs = CreateUserCreatedEvent(userId, "testuser");
+
+        // Act
+        await _consumer.OnEvent(eventArgs);
+
+        // Assert - LDAP assignment should be used
+        _userLanguageServiceMock.Verify(
+            s => s.AssignLanguageAsync(
+                userId,
+                portugueseId,
+                "ldap",
+                false,
+                true,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        // Auto-manage should NOT be called since LDAP matched
+        _userLanguageServiceMock.Verify(
+            s => s.AssignLanguageAsync(
+                userId,
+                It.IsAny<Guid?>(),
+                "auto",
+                It.IsAny<bool>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task WhenLdapEnabledButNoMatch_FallsBackToAutoManage()
+    {
+        // Arrange
+        var defaultLangId = Guid.NewGuid();
+        _context.Configuration.EnableLdapIntegration = true;
+        _context.Configuration.AutoManageNewUsers = true;
+        _context.Configuration.DefaultLanguageAlternativeId = defaultLangId;
+
+        _ldapIntegrationServiceMock.Setup(s => s.IsLdapPluginAvailable()).Returns(true);
+        _ldapIntegrationServiceMock
+            .Setup(s => s.DetermineLanguageFromGroupsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid?)null); // No LDAP match
+
+        var userId = Guid.NewGuid();
+        var eventArgs = CreateUserCreatedEvent(userId, "testuser");
+
+        // Act
+        await _consumer.OnEvent(eventArgs);
+
+        // Assert - should fall back to auto-manage
+        _userLanguageServiceMock.Verify(
+            s => s.AssignLanguageAsync(
+                userId,
+                defaultLangId,
+                "auto",
+                false,
+                true,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task WhenLdapPluginNotAvailable_FallsBackToAutoManage()
     {
         // Arrange
         _context.Configuration.EnableLdapIntegration = true;
+        _context.Configuration.AutoManageNewUsers = true;
+        _context.Configuration.DefaultLanguageAlternativeId = null;
+
         _ldapIntegrationServiceMock.Setup(s => s.IsLdapPluginAvailable()).Returns(false);
 
-        // The consumer should check plugin availability before querying groups
-        _ldapIntegrationServiceMock.Verify(
-            s => s.GetUserGroupsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+        var userId = Guid.NewGuid();
+        var eventArgs = CreateUserCreatedEvent(userId, "testuser");
+
+        // Act
+        await _consumer.OnEvent(eventArgs);
+
+        // Assert - should fall back to auto-manage since LDAP plugin unavailable
+        _userLanguageServiceMock.Verify(
+            s => s.AssignLanguageAsync(
+                userId,
+                null,
+                "auto",
+                false,
+                true,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }
 

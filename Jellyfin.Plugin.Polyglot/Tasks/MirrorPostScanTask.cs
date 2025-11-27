@@ -28,14 +28,21 @@ public class MirrorPostScanTask : ILibraryPostScanTask
     /// <inheritdoc />
     public async Task Run(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Library scan completed, syncing mirrors...");
-
         var config = Plugin.Instance?.Configuration;
         if (config == null)
         {
             _logger.LogWarning("Plugin configuration not available");
             return;
         }
+
+        // Check if auto-sync after library scans is enabled
+        if (!config.SyncMirrorsAfterLibraryScan)
+        {
+            _logger.LogDebug("Auto-sync after library scans is disabled, skipping");
+            return;
+        }
+
+        _logger.LogInformation("Library scan completed, syncing mirrors...");
 
         var alternatives = config.LanguageAlternatives;
         if (alternatives.Count == 0)

@@ -38,6 +38,25 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableLdapIntegration { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether new users should be automatically managed by the plugin.
+    /// When enabled, newly created users will be added to plugin management with the default language.
+    /// </summary>
+    public bool AutoManageNewUsers { get; set; }
+
+    /// <summary>
+    /// Gets or sets the default language alternative ID for new users.
+    /// Null means users get "Default libraries" (access to source libraries only).
+    /// </summary>
+    public Guid? DefaultLanguageAlternativeId { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether mirrors should be synced automatically after library scans.
+    /// When disabled, mirrors will only sync via the scheduled task or manual trigger.
+    /// Default is true to maintain backward compatibility.
+    /// </summary>
+    public bool SyncMirrorsAfterLibraryScan { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the list of configured language alternatives.
     /// </summary>
     public List<LanguageAlternative> LanguageAlternatives { get; set; }

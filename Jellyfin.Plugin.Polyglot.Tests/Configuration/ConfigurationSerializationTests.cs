@@ -191,7 +191,6 @@ public class ConfigurationSerializationTests
         var config = new PluginConfiguration
         {
             EnableLdapIntegration = true,
-            MirrorSyncIntervalHours = 12,
             UserReconciliationTime = "04:30"
         };
 
@@ -200,8 +199,82 @@ public class ConfigurationSerializationTests
 
         // Assert
         result.EnableLdapIntegration.Should().BeTrue();
-        result.MirrorSyncIntervalHours.Should().Be(12);
         result.UserReconciliationTime.Should().Be("04:30");
+    }
+
+    /// <summary>
+    /// Verifies that new user default settings are preserved.
+    /// </summary>
+    [Fact]
+    public void Configuration_WithNewUserDefaults_CanSerializeAndDeserialize()
+    {
+        // Arrange
+        var defaultLanguageId = Guid.NewGuid();
+        var config = new PluginConfiguration
+        {
+            AutoManageNewUsers = true,
+            DefaultLanguageAlternativeId = defaultLanguageId
+        };
+
+        // Act
+        var result = SerializeAndDeserialize(config);
+
+        // Assert
+        result.AutoManageNewUsers.Should().BeTrue();
+        result.DefaultLanguageAlternativeId.Should().Be(defaultLanguageId);
+    }
+
+    /// <summary>
+    /// Verifies that null DefaultLanguageAlternativeId is preserved.
+    /// </summary>
+    [Fact]
+    public void Configuration_WithNullDefaultLanguage_CanSerializeAndDeserialize()
+    {
+        // Arrange
+        var config = new PluginConfiguration
+        {
+            AutoManageNewUsers = true,
+            DefaultLanguageAlternativeId = null
+        };
+
+        // Act
+        var result = SerializeAndDeserialize(config);
+
+        // Assert
+        result.AutoManageNewUsers.Should().BeTrue();
+        result.DefaultLanguageAlternativeId.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Verifies that sync behavior settings are preserved.
+    /// </summary>
+    [Fact]
+    public void Configuration_WithSyncBehaviorSettings_CanSerializeAndDeserialize()
+    {
+        // Arrange
+        var config = new PluginConfiguration
+        {
+            SyncMirrorsAfterLibraryScan = false
+        };
+
+        // Act
+        var result = SerializeAndDeserialize(config);
+
+        // Assert
+        result.SyncMirrorsAfterLibraryScan.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Verifies that SyncMirrorsAfterLibraryScan defaults to true.
+    /// </summary>
+    [Fact]
+    public void Configuration_Default_SyncMirrorsAfterLibraryScanIsTrue()
+    {
+        // Arrange & Act
+        var config = new PluginConfiguration();
+
+        // Assert
+        config.SyncMirrorsAfterLibraryScan.Should().BeTrue();
     }
 
     /// <summary>
@@ -220,7 +293,8 @@ public class ConfigurationSerializationTests
         var config = new PluginConfiguration
         {
             EnableLdapIntegration = true,
-            MirrorSyncIntervalHours = 6,
+            AutoManageNewUsers = true,
+            DefaultLanguageAlternativeId = portugueseAltId,
             UserReconciliationTime = "03:00",
             LanguageAlternatives = new List<LanguageAlternative>
             {
