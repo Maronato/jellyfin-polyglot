@@ -38,41 +38,45 @@ Jellyfin.Plugin.Polyglot/
 ### MirrorService
 
 Handles hardlink operations:
-- Creates hardlinks for media files, skips metadata
-- Creates Jellyfin libraries with target language settings
-- Syncs mirrors incrementally (adds new files, removes deleted ones)
-- Cleans up orphaned mirrors when libraries are deleted
+
+-   Creates hardlinks for media files, skips metadata
+-   Creates Jellyfin libraries with target language settings
+-   Syncs mirrors incrementally (adds new files, removes deleted ones)
+-   Cleans up orphaned mirrors when libraries are deleted
 
 ### LibraryAccessService
 
 Calculates which libraries each user should see:
-- Users with a language → see that language's mirrors
-- Users on "default" → see source libraries only
-- Unmanaged users → plugin doesn't touch their access
-- Non-managed libraries (e.g., "Home Videos") → access preserved
+
+-   Users with a language → see that language's mirrors
+-   Users on "default" → see source libraries only
+-   Unmanaged users → plugin doesn't touch their access
+-   Non-managed libraries (e.g., "Home Videos") → access preserved
 
 ### UserLanguageService
 
 Manages language assignments:
-- Stores per-user preferences in plugin config
-- Supports "manual override" flag to prevent LDAP overwriting admin choices
-- Triggers library access updates on assignment changes
+
+-   Stores per-user preferences in plugin config
+-   Supports "manual override" flag to prevent LDAP overwriting admin choices
+-   Triggers library access updates on assignment changes
 
 ### LdapIntegrationService
 
 Integrates with jellyfin-plugin-ldapauth:
-- Reads LDAP config via reflection (no direct dependency)
-- Queries group memberships via `memberOf` attribute
-- Maps groups to languages based on priority
+
+-   Reads LDAP config via reflection (no direct dependency)
+-   Queries group memberships via `memberOf` attribute
+-   Maps groups to languages based on priority
 
 ## File Classification
 
 `FileClassifier` determines what gets hardlinked:
 
-| Hardlinked | Skipped |
-|------------|---------|
-| `.mkv`, `.mp4`, `.avi`, `.ts` | `.nfo` |
-| `.mp3`, `.flac`, `.m4a` | `.jpg`, `.png`, `.gif`, `.webp` |
+| Hardlinked                     | Skipped                                    |
+| ------------------------------ | ------------------------------------------ |
+| `.mkv`, `.mp4`, `.avi`, `.ts`  | `.nfo`                                     |
+| `.mp3`, `.flac`, `.m4a`        | `.jpg`, `.png`, `.gif`, `.webp`            |
 | `.srt`, `.ass`, `.vtt`, `.sup` | `extrafanart/`, `.trickplay/`, `metadata/` |
 
 Configurable via plugin settings.
@@ -93,6 +97,6 @@ dotnet test
 
 Tests use `PluginTestContext` to create a real `Plugin.Instance` with mocked dependencies. Key test categories:
 
-- **Service tests**: Unit tests for business logic
-- **Behavior tests**: End-to-end library access scenarios
-- **File operation tests**: Real filesystem hardlink tests
+-   **Service tests**: Unit tests for business logic
+-   **Behavior tests**: End-to-end library access scenarios
+-   **File operation tests**: Real filesystem hardlink tests
