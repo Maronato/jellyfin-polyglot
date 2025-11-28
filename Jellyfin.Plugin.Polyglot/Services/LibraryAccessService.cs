@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Models;
 using MediaBrowser.Controller.Library;
 using Microsoft.Extensions.Logging;
@@ -38,7 +39,7 @@ public class LibraryAccessService : ILibraryAccessService
         var user = _userManager.GetUserById(userId);
         if (user == null)
         {
-            _logger.LogWarning("User {UserId} not found", userId);
+            _logger.PolyglotWarning("User {0} not found", userId);
             return;
         }
 
@@ -52,7 +53,7 @@ public class LibraryAccessService : ILibraryAccessService
         var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
         if (userConfig == null || !userConfig.IsPluginManaged)
         {
-            _logger.LogDebug("User {Username} is not managed by plugin, skipping library access update", user.Username);
+            _logger.PolyglotDebug("User {0} is not managed by plugin, skipping library access update", user.Username);
             return;
         }
 
@@ -94,15 +95,15 @@ public class LibraryAccessService : ILibraryAccessService
             {
                 finalLibraries.Add(libId);
             }
-            _logger.LogInformation(
-                "User {Username} - no mirrors configured yet, preserving current access to {Count} libraries",
+            _logger.PolyglotInfo(
+                "User {0} - no mirrors configured yet, preserving current access to {1} libraries",
                 user.Username,
                 finalLibraries.Count);
         }
         else
         {
-            _logger.LogInformation(
-                "User {Username} library access updated: {ManagedCount} managed libraries, {UnmanagedCount} unmanaged preserved",
+            _logger.PolyglotInfo(
+                "User {0} library access updated: {1} managed libraries, {2} unmanaged preserved",
                 user.Username,
                 expectedManagedLibraries.Count,
                 finalLibraries.Count - expectedManagedLibraries.Count);
@@ -151,8 +152,8 @@ public class LibraryAccessService : ILibraryAccessService
             return false;
         }
 
-        _logger.LogInformation(
-            "Reconciling user {Username} library access: expected {Expected}, current {Current}, EnableAllFolders={EnableAll}",
+        _logger.PolyglotInfo(
+            "Reconciling user {0} library access: expected {1}, current {2}, EnableAllFolders={3}",
             user.Username,
             expectedLibraries.Count,
             currentLibraries.Count,
@@ -186,7 +187,7 @@ public class LibraryAccessService : ILibraryAccessService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to reconcile user {UserId}", userLang.UserId);
+                _logger.PolyglotError(ex, "Failed to reconcile user {0}", userLang.UserId);
             }
         }
 
@@ -302,8 +303,8 @@ public class LibraryAccessService : ILibraryAccessService
                 }
 
                 // Mirror was deleted from Jellyfin - show the source as fallback
-                _logger.LogWarning(
-                    "Mirror for source library {SourceLibraryId} was deleted from Jellyfin. Showing source as fallback.",
+                _logger.PolyglotWarning(
+                    "Mirror for source library {0} was deleted from Jellyfin. Showing source as fallback.",
                     libraryId);
             }
 
@@ -377,36 +378,6 @@ public class LibraryAccessService : ILibraryAccessService
         return result;
     }
 
-    /// <summary>
-    /// Gets all libraries that are not mirrors for any language alternative.
-    /// These are the "original" libraries that unassigned users should see.
-    /// </summary>
-    private IEnumerable<Guid> GetNonMirrorLibraries()
-    {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            yield break;
-        }
-
-        // Collect all mirror library IDs across all alternatives
-        var allMirrorIds = config.LanguageAlternatives
-            .SelectMany(a => a.MirroredLibraries)
-            .Where(m => m.TargetLibraryId.HasValue)
-            .Select(m => m.TargetLibraryId!.Value)
-            .ToHashSet();
-
-        // Return libraries that are not mirrors
-        foreach (var folder in _libraryManager.GetVirtualFolders())
-        {
-            var libraryId = Guid.Parse(folder.ItemId);
-            if (!allMirrorIds.Contains(libraryId))
-            {
-                yield return libraryId;
-            }
-        }
-    }
-
     /// <inheritdoc />
     public async Task<int> EnableAllUsersAsync(CancellationToken cancellationToken = default)
     {
@@ -459,14 +430,14 @@ public class LibraryAccessService : ILibraryAccessService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to enable user {Username}", user.Username);
+                _logger.PolyglotError(ex, "Failed to enable user {0}", user.Username);
             }
         }
 
         // Save configuration
         Plugin.Instance?.SaveConfiguration();
 
-        _logger.LogInformation("Enabled plugin management for {Count} users", enabledCount);
+        _logger.PolyglotInfo("Enabled plugin management for {0} users", enabledCount);
         return enabledCount;
     }
 
@@ -482,7 +453,7 @@ public class LibraryAccessService : ILibraryAccessService
         var user = _userManager.GetUserById(userId);
         if (user == null)
         {
-            _logger.LogWarning("User {UserId} not found", userId);
+            _logger.PolyglotWarning("User {0} not found", userId);
             return;
         }
 
@@ -500,11 +471,11 @@ public class LibraryAccessService : ILibraryAccessService
         {
             user.SetPermission(PermissionKind.EnableAllFolders, true);
             await _userManager.UpdateUserAsync(user).ConfigureAwait(false);
-            _logger.LogInformation("Restored EnableAllFolders for user {Username}", user.Username);
+            _logger.PolyglotInfo("Restored EnableAllFolders for user {0}", user.Username);
         }
 
         Plugin.Instance?.SaveConfiguration();
-        _logger.LogInformation("Disabled plugin management for user {Username}", user.Username);
+        _logger.PolyglotInfo("Disabled plugin management for user {0}", user.Username);
     }
 
     /// <inheritdoc />
@@ -513,7 +484,7 @@ public class LibraryAccessService : ILibraryAccessService
         var user = _userManager.GetUserById(userId);
         if (user == null)
         {
-            _logger.LogWarning("User {UserId} not found when adding libraries", userId);
+            _logger.PolyglotWarning("User {0} not found when adding libraries", userId);
             return;
         }
 
@@ -550,8 +521,8 @@ public class LibraryAccessService : ILibraryAccessService
 
         await _userManager.UpdateUserAsync(user).ConfigureAwait(false);
 
-        _logger.LogInformation(
-            "Added {AddedCount} source libraries to user {Username}'s access (total: {TotalCount})",
+        _logger.PolyglotInfo(
+            "Added {0} source libraries to user {1}'s access (total: {2})",
             addedCount,
             user.Username,
             newAccess.Count);

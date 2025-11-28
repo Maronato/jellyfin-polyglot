@@ -53,50 +53,6 @@ public class LibraryAccessServiceTests : IDisposable
     }
 
     [Fact]
-    public void GetNonMirrorLibraries_ReturnsOnlySourceLibraries()
-    {
-        // Arrange - This tests the fix for the bug where unassigned users saw ALL libraries
-        var moviesId = Guid.NewGuid();
-        var musicId = Guid.NewGuid();
-        var ptMirrorId = Guid.NewGuid();
-        var esMirrorId = Guid.NewGuid();
-
-        var portuguese = _context.AddLanguageAlternative("Portuguese", "pt-BR");
-        var spanish = _context.AddLanguageAlternative("Spanish", "es-ES");
-
-        _context.AddMirror(portuguese, moviesId, "Movies", ptMirrorId);
-        _context.AddMirror(spanish, moviesId, "Movies", esMirrorId);
-
-        var libraries = new List<VirtualFolderInfo>
-        {
-            CreateVirtualFolder(moviesId, "Movies"),      // Source - should be included
-            CreateVirtualFolder(musicId, "Music"),         // Not mirrored - should be included
-            CreateVirtualFolder(ptMirrorId, "Filmes"),     // Mirror - should be EXCLUDED
-            CreateVirtualFolder(esMirrorId, "Películas")   // Mirror - should be EXCLUDED
-        };
-        _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(libraries);
-
-        // Act - Get non-mirror libraries (what unassigned users should see)
-        var config = _context.Configuration;
-        var allMirrorIds = config.LanguageAlternatives
-            .SelectMany(a => a.MirroredLibraries)
-            .Where(m => m.TargetLibraryId.HasValue)
-            .Select(m => m.TargetLibraryId!.Value)
-            .ToHashSet();
-
-        var nonMirrors = libraries
-            .Where(f => !allMirrorIds.Contains(Guid.Parse(f.ItemId)))
-            .Select(f => Guid.Parse(f.ItemId))
-            .ToList();
-
-        // Assert - Unassigned users should see source libraries, NOT mirrors
-        nonMirrors.Should().Contain(moviesId, "source library should be visible");
-        nonMirrors.Should().Contain(musicId, "non-mirrored library should be visible");
-        nonMirrors.Should().NotContain(ptMirrorId, "Portuguese mirror should NOT be visible to unassigned users");
-        nonMirrors.Should().NotContain(esMirrorId, "Spanish mirror should NOT be visible to unassigned users");
-    }
-
-    [Fact]
     public void GetExpectedLibraryAccess_UserWithAssignment_GetsMirrorLibraries()
     {
         // Arrange
