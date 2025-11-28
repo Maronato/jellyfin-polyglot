@@ -10,6 +10,14 @@
     "repositoryUrl": "https://github.com/Maronato/jellyfin-polyglot",
     "versions": [
       {
+        "version": "0.8.0.0",
+        "changelog": "**Full Changelog**: https://github.com/Maronato/jellyfin-polyglot/compare/v0.7.0...v0.8.0\n",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/Maronato/jellyfin-polyglot/releases/download/v0.8.0/polyglot_0.8.0.0.zip",
+        "checksum": "2f46b29a25d24e29e475e41e19657b3c",
+        "timestamp": "2025-11-28T18:06:48Z"
+      },
+      {
         "version": "0.7.0.0",
         "changelog": "**Full Changelog**: https://github.com/Maronato/jellyfin-polyglot/compare/v0.6.1...v0.7.0\n",
         "targetAbi": "10.10.0.0",
