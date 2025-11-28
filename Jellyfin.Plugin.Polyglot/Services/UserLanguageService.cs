@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Models;
 using MediaBrowser.Controller.Library;
 using Microsoft.Extensions.Logging;
@@ -76,8 +77,8 @@ public class UserLanguageService : IUserLanguageService
 
         SaveConfiguration();
 
-        _logger.LogInformation(
-            "Assigned language {AlternativeName} to user {Username} (by: {SetBy}, manual: {ManuallySet}, managed: {Managed})",
+        _logger.PolyglotInfo(
+            "Assigned language {0} to user {1} (by: {2}, manual: {3}, managed: {4})",
             alternative?.Name ?? "Default",
             user.Username,
             setBy,
@@ -138,7 +139,7 @@ public class UserLanguageService : IUserLanguageService
             userConfig.SetBy = "admin";
             SaveConfiguration();
 
-            _logger.LogInformation("Cleared language assignment for user {UserId}", userId);
+            _logger.PolyglotInfo("Cleared language assignment for user {0}", userId);
 
             // Update user's library access to show all libraries
             await _libraryAccessService.UpdateUserLibraryAccessAsync(userId, cancellationToken).ConfigureAwait(false);
@@ -209,7 +210,7 @@ public class UserLanguageService : IUserLanguageService
         if (removed > 0)
         {
             SaveConfiguration();
-            _logger.LogInformation("Removed language assignment for deleted user {UserId}", userId);
+            _logger.PolyglotInfo("Removed language assignment for deleted user {0}", userId);
         }
     }
 

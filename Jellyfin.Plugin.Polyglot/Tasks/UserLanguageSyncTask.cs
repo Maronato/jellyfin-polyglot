@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Services;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
@@ -67,12 +68,12 @@ public class UserLanguageSyncTask : IScheduledTask
     /// <inheritdoc />
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Starting user language sync task");
+        _logger.PolyglotInfo("Starting user language sync task");
 
         var config = Plugin.Instance?.Configuration;
         if (config == null)
         {
-            _logger.LogWarning("Plugin configuration not available");
+            _logger.PolyglotWarning("Plugin configuration not available");
             return;
         }
 
@@ -102,27 +103,27 @@ public class UserLanguageSyncTask : IScheduledTask
                         if (wasReconciled)
                         {
                             reconciledUsers++;
-                            _logger.LogInformation("Reconciled library access for user {Username}", user.Username);
+                            _logger.PolyglotInfo("Reconciled library access for user {0}", user.Username);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to reconcile user {Username} ({UserId})", user.Username, user.Id);
+                    _logger.PolyglotError(ex, "Failed to reconcile user {0} ({1})", user.Username, user.Id);
                 }
 
                 processedUsers++;
                 progress.Report((double)processedUsers / totalUsers * 100);
             }
 
-            _logger.LogInformation(
-                "User language sync completed: {Total} users processed, {Reconciled} reconciled",
+            _logger.PolyglotInfo(
+                "User language sync completed: {0} users processed, {1} reconciled",
                 totalUsers,
                 reconciledUsers);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "User language sync task failed");
+            _logger.PolyglotError(ex, "User language sync task failed");
             throw;
         }
 

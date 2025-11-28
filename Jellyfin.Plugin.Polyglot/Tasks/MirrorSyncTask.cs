@@ -69,20 +69,20 @@ public class MirrorSyncTask : IScheduledTask
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to cleanup orphaned mirrors, continuing with sync");
+            _logger.PolyglotWarning(ex, "Failed to cleanup orphaned mirrors, continuing with sync");
         }
 
         var config = Plugin.Instance?.Configuration;
         if (config == null)
         {
-            _logger.LogWarning("Plugin configuration not available");
+            _logger.PolyglotWarning("Plugin configuration not available");
             return;
         }
 
         var alternatives = config.LanguageAlternatives;
         if (alternatives.Count == 0)
         {
-            _logger.LogInformation("No language alternatives configured, nothing to sync");
+            _logger.PolyglotInfo("No language alternatives configured, nothing to sync");
             return;
         }
 
@@ -93,7 +93,7 @@ public class MirrorSyncTask : IScheduledTask
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            _logger.LogInformation("Syncing mirrors for language alternative: {Name}", alternative.Name);
+            _logger.PolyglotInfo("Syncing mirrors for language alternative: {0}", alternative.Name);
 
             var altProgress = new Progress<double>(p =>
             {

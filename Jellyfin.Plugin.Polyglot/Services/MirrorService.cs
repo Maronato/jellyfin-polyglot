@@ -101,7 +101,7 @@ public class MirrorService : IMirrorService
 
             SaveConfiguration();
 
-            _logger.LogInformation("Mirror created successfully with {FileCount} files", fileCount);
+            _logger.PolyglotInfo("Mirror created successfully with {0} files", fileCount);
         }
         catch (Exception ex)
         {
@@ -120,7 +120,7 @@ public class MirrorService : IMirrorService
     /// <inheritdoc />
     public async Task SyncMirrorAsync(LibraryMirror mirror, IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Syncing mirror {MirrorId} ({SourceLibrary})", mirror.Id, mirror.SourceLibraryName);
+        _logger.PolyglotInfo("Syncing mirror {0} ({1})", mirror.Id, mirror.SourceLibraryName);
 
         var mirrorLock = _mirrorLocks.GetOrAdd(mirror.Id, _ => new SemaphoreSlim(1, 1));
         await mirrorLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -180,7 +180,7 @@ public class MirrorService : IMirrorService
                     // We check Size and LastWriteTime
                     if (sourceSig.Size != targetSig.Size || sourceSig.ModifiedTicks != targetSig.ModifiedTicks)
                     {
-                        _logger.LogDebug("File modified: {File} (Source: {SourceSize}/{SourceTime}, Target: {TargetSize}/{TargetTime})",
+                        _logger.PolyglotDebug("File modified: {0} (Source: {1}/{2}, Target: {3}/{4})",
                             relativePath, sourceSig.Size, sourceSig.ModifiedTicks, targetSig.Size, targetSig.ModifiedTicks);
                         
                         // Treat as remove + add to update the hardlink
@@ -218,7 +218,7 @@ public class MirrorService : IMirrorService
                     if (File.Exists(targetFile))
                     {
                         File.Delete(targetFile);
-                        _logger.LogDebug("Deleted file {File}", targetFile);
+                        _logger.PolyglotDebug("Deleted file {0}", targetFile);
                     }
 
                     // Clean up empty directories
@@ -230,7 +230,7 @@ public class MirrorService : IMirrorService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to delete file {File}", targetFile);
+                    _logger.PolyglotWarning(ex, "Failed to delete file {0}", targetFile);
                 }
 
                 completedOperations++;
@@ -260,11 +260,11 @@ public class MirrorService : IMirrorService
                     try
                     {
                         FileSystemHelper.CreateHardLink(sourceFile, targetFile, _logger);
-                        _logger.LogDebug("Created hardlink for {File}", relativePath);
+                        _logger.PolyglotDebug("Created hardlink for {0}", relativePath);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Failed to create hardlink for {File}", relativePath);
+                        _logger.PolyglotWarning(ex, "Failed to create hardlink for {0}", relativePath);
                     }
                 }
 
@@ -299,7 +299,7 @@ public class MirrorService : IMirrorService
     /// <inheritdoc />
     public async Task DeleteMirrorAsync(LibraryMirror mirror, bool deleteLibrary = true, bool deleteFiles = true, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Deleting mirror {MirrorId} (deleteLibrary: {DeleteLibrary}, deleteFiles: {DeleteFiles})",
+        _logger.PolyglotInfo("Deleting mirror {0} (deleteLibrary: {1}, deleteFiles: {2})",
             mirror.Id, deleteLibrary, deleteFiles);
 
         var mirrorLock = _mirrorLocks.GetOrAdd(mirror.Id, _ => new SemaphoreSlim(1, 1));
@@ -316,11 +316,11 @@ public class MirrorService : IMirrorService
                     // This ensures all references to the library are properly removed
                     // (similar to what happens when deleting via Jellyfin's UI)
                     _libraryManager.RemoveVirtualFolder(mirror.TargetLibraryName, true);
-                    _logger.LogInformation("Removed Jellyfin library {LibraryName}", mirror.TargetLibraryName);
+                    _logger.PolyglotInfo("Removed Jellyfin library {0}", mirror.TargetLibraryName);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to remove Jellyfin library {LibraryName}", mirror.TargetLibraryName);
+                    _logger.PolyglotWarning(ex, "Failed to remove Jellyfin library {0}", mirror.TargetLibraryName);
                 }
             }
 
@@ -330,11 +330,11 @@ public class MirrorService : IMirrorService
                 try
                 {
                     Directory.Delete(mirror.TargetPath, true);
-                    _logger.LogInformation("Deleted mirror directory {Path}", mirror.TargetPath);
+                    _logger.PolyglotInfo("Deleted mirror directory {0}", mirror.TargetPath);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to delete mirror directory {Path}", mirror.TargetPath);
+                    _logger.PolyglotWarning(ex, "Failed to delete mirror directory {0}", mirror.TargetPath);
                 }
             }
 
@@ -349,7 +349,7 @@ public class MirrorService : IMirrorService
     /// <inheritdoc />
     public async Task SyncAllMirrorsAsync(LanguageAlternative alternative, IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Syncing all mirrors for language alternative {Name}", alternative.Name);
+        _logger.PolyglotInfo("Syncing all mirrors for language alternative {0}", alternative.Name);
 
         var mirrors = alternative.MirroredLibraries.ToList();
         var totalMirrors = mirrors.Count;
@@ -489,8 +489,8 @@ public class MirrorService : IMirrorService
                 // Check if source library still exists
                 if (!existingLibraryIds.Contains(mirror.SourceLibraryId))
                 {
-                    _logger.LogWarning(
-                        "Source library {SourceLibraryId} for mirror {MirrorId} no longer exists - will delete mirror",
+                    _logger.PolyglotWarning(
+                        "Source library {0} for mirror {1} no longer exists - will delete mirror",
                         mirror.SourceLibraryId,
                         mirror.Id);
 
@@ -501,8 +501,8 @@ public class MirrorService : IMirrorService
                 // Check if target library still exists (if it was created)
                 if (mirror.TargetLibraryId.HasValue && !existingLibraryIds.Contains(mirror.TargetLibraryId.Value))
                 {
-                    _logger.LogWarning(
-                        "Target library {TargetLibraryId} for mirror {MirrorId} no longer exists - removing mirror config",
+                    _logger.PolyglotWarning(
+                        "Target library {0} for mirror {1} no longer exists - removing mirror config",
                         mirror.TargetLibraryId.Value,
                         mirror.Id);
 
@@ -539,21 +539,21 @@ public class MirrorService : IMirrorService
                     if (!sourceHasOtherMirrors && existingLibraryIds.Contains(mirror.SourceLibraryId))
                     {
                         result.SourcesWithoutMirrors.Add(mirror.SourceLibraryId);
-                        _logger.LogInformation(
-                            "Source library {SourceLibraryId} ({SourceName}) has no more mirrors",
+                        _logger.PolyglotInfo(
+                            "Source library {0} ({1}) has no more mirrors",
                             mirror.SourceLibraryId,
                             mirror.SourceLibraryName);
                     }
                 }
 
-                _logger.LogInformation(
-                    "Removed orphaned mirror {MirrorName} ({Reason})",
+                _logger.PolyglotInfo(
+                    "Removed orphaned mirror {0} ({1})",
                     mirror.TargetLibraryName,
                     reason);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to delete orphaned mirror {MirrorId}", mirror.Id);
+                _logger.PolyglotError(ex, "Failed to delete orphaned mirror {0}", mirror.Id);
             }
         }
 
@@ -774,7 +774,7 @@ public class MirrorService : IMirrorService
             await RefreshLibraryAsync(mirror.TargetLibraryId.Value, cancellationToken).ConfigureAwait(false);
         }
 
-        _logger.LogInformation("Created Jellyfin library {LibraryName} with ID {LibraryId}",
+        _logger.PolyglotInfo("Created Jellyfin library {0} with ID {1}",
             mirror.TargetLibraryName, mirror.TargetLibraryId);
     }
 
@@ -785,7 +785,7 @@ public class MirrorService : IMirrorService
     /// </summary>
     private Task RefreshLibraryAsync(Guid libraryId, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Queueing library refresh for {LibraryId}", libraryId);
+        _logger.PolyglotInfo("Queueing library refresh for {0}", libraryId);
 
         try
         {
@@ -808,12 +808,12 @@ public class MirrorService : IMirrorService
             // Using Low priority to let the filesystem/Jellyfin settle after hardlink creation
             _providerManager.QueueRefresh(libraryId, refreshOptions, RefreshPriority.Low);
 
-            _logger.LogInformation("Successfully queued library refresh for {LibraryId}", libraryId);
+            _logger.PolyglotInfo("Successfully queued library refresh for {0}", libraryId);
         }
         catch (Exception ex)
         {
             // Log but don't fail the mirror creation - the library exists, just the scan didn't start
-            _logger.LogWarning(ex, "Failed to queue refresh for library {LibraryId}. The library was created but may need a manual scan.", libraryId);
+            _logger.PolyglotWarning(ex, "Failed to queue refresh for library {0}. The library was created but may need a manual scan.", libraryId);
         }
 
         return Task.CompletedTask;

@@ -32,14 +32,14 @@ public class MirrorPostScanTask : ILibraryPostScanTask
         var config = Plugin.Instance?.Configuration;
         if (config == null)
         {
-            _logger.LogWarning("Plugin configuration not available");
+            _logger.PolyglotWarning("Plugin configuration not available");
             return;
         }
 
         // Check if auto-sync after library scans is enabled
         if (!config.SyncMirrorsAfterLibraryScan)
         {
-            _logger.LogDebug("Auto-sync after library scans is disabled, skipping");
+            _logger.PolyglotDebug("Auto-sync after library scans is disabled, skipping");
             return;
         }
 
@@ -48,7 +48,7 @@ public class MirrorPostScanTask : ILibraryPostScanTask
         var alternatives = config.LanguageAlternatives;
         if (alternatives.Count == 0)
         {
-            _logger.LogDebug("No language alternatives configured, nothing to sync");
+            _logger.PolyglotDebug("No language alternatives configured, nothing to sync");
             return;
         }
 
@@ -66,7 +66,7 @@ public class MirrorPostScanTask : ILibraryPostScanTask
                 continue;
             }
 
-            _logger.LogDebug("Post-scan sync for language alternative: {Name}", alternative.Name);
+            _logger.PolyglotDebug("Post-scan sync for language alternative: {0}", alternative.Name);
 
             var altProgress = new Progress<double>(p =>
             {

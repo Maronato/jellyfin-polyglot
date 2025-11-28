@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Jellyfin.Data.Events.Users;
+using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Services;
 using MediaBrowser.Controller.Events;
 using Microsoft.Extensions.Logging;
@@ -29,7 +30,7 @@ public class UserDeletedConsumer : IEventConsumer<UserDeletedEventArgs>
     public Task OnEvent(UserDeletedEventArgs eventArgs)
     {
         var user = eventArgs.Argument;
-        _logger.LogInformation("User deleted: {Username} ({UserId})", user.Username, user.Id);
+        _logger.PolyglotInfo("User deleted: {0} ({1})", user.Username, user.Id);
 
         // Remove user language assignment
         _userLanguageService.RemoveUser(user.Id);

@@ -1,6 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Events.Users;
+using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Services;
 using MediaBrowser.Controller.Events;
 using Microsoft.Extensions.Logging;
@@ -33,7 +34,7 @@ public class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
     public async Task OnEvent(UserCreatedEventArgs eventArgs)
     {
         var user = eventArgs.Argument;
-        _logger.LogInformation("User created: {Username} ({UserId})", user.Username, user.Id);
+        _logger.PolyglotInfo("User created: {0} ({1})", user.Username, user.Id);
 
         var config = Plugin.Instance?.Configuration;
         if (config == null)
@@ -59,18 +60,18 @@ public class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
                     isPluginManaged: true,
                     CancellationToken.None).ConfigureAwait(false);
 
-                _logger.LogInformation(
-                    "Assigned language {LanguageId} to new user {Username} based on LDAP groups",
+                _logger.PolyglotInfo(
+                    "Assigned language {0} to new user {1} based on LDAP groups",
                     languageId.Value,
                     user.Username);
                     return;
             }
 
-                _logger.LogDebug("No LDAP group match found for new user {Username}", user.Username);
+                _logger.PolyglotDebug("No LDAP group match found for new user {0}", user.Username);
             }
             catch (System.Exception ex)
             {
-                _logger.LogError(ex, "Failed to check LDAP groups for new user {Username}", user.Username);
+                _logger.PolyglotError(ex, "Failed to check LDAP groups for new user {0}", user.Username);
             }
         }
 
@@ -91,14 +92,14 @@ public class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
                     ? config.LanguageAlternatives.Find(a => a.Id == config.DefaultLanguageAlternativeId.Value)?.Name ?? "Unknown"
                     : "Default libraries";
 
-                _logger.LogInformation(
-                    "Auto-assigned {LanguageName} to new user {Username}",
+                _logger.PolyglotInfo(
+                    "Auto-assigned {0} to new user {1}",
                     languageName,
                     user.Username);
             }
             catch (System.Exception ex)
         {
-            _logger.LogError(ex, "Failed to auto-assign language for new user {Username}", user.Username);
+            _logger.PolyglotError(ex, "Failed to auto-assign language for new user {0}", user.Username);
             }
         }
     }

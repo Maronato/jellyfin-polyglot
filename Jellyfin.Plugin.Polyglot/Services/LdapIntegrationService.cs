@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Polyglot.Helpers;
 using MediaBrowser.Common.Plugins;
 using Microsoft.Extensions.Logging;
 using Novell.Directory.Ldap;
@@ -70,7 +71,7 @@ public class LdapIntegrationService : ILdapIntegrationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get LDAP status");
+            _logger.PolyglotError(ex, "Failed to get LDAP status");
             status.ErrorMessage = ex.Message;
         }
 
@@ -83,14 +84,14 @@ public class LdapIntegrationService : ILdapIntegrationService
         var ldapPlugin = GetLdapPlugin();
         if (ldapPlugin == null)
         {
-            _logger.LogWarning("LDAP plugin not available");
+            _logger.PolyglotWarning("LDAP plugin not available");
             return Enumerable.Empty<string>();
         }
 
         var ldapConfig = GetLdapConfiguration(ldapPlugin);
         if (ldapConfig == null || string.IsNullOrEmpty(ldapConfig.LdapServer))
         {
-            _logger.LogWarning("LDAP not configured");
+            _logger.PolyglotWarning("LDAP not configured");
             return Enumerable.Empty<string>();
         }
 
@@ -100,7 +101,7 @@ public class LdapIntegrationService : ILdapIntegrationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to query LDAP groups for user {Username}", username);
+            _logger.PolyglotError(ex, "Failed to query LDAP groups for user {0}", username);
             return Enumerable.Empty<string>();
         }
     }
@@ -138,8 +139,8 @@ public class LdapIntegrationService : ILdapIntegrationService
         }
 
         var bestMatch = matchingMappings.First();
-        _logger.LogDebug(
-            "User {Username} matched LDAP group {GroupDn} with priority {Priority}",
+        _logger.PolyglotDebug(
+            "User {0} matched LDAP group {1} with priority {2}",
             username,
             bestMatch.LdapGroupDn,
             bestMatch.Priority);
@@ -210,7 +211,7 @@ public class LdapIntegrationService : ILdapIntegrationService
         {
             result.Success = false;
             result.Message = $"Connection failed: {ex.Message}";
-            _logger.LogError(ex, "LDAP connection test failed");
+            _logger.PolyglotError(ex, "LDAP connection test failed");
         }
 
         return result;
@@ -258,14 +259,14 @@ public class LdapIntegrationService : ILdapIntegrationService
             var configProperty = ldapPlugin.GetType().GetProperty("Configuration");
             if (configProperty == null)
             {
-                _logger.LogError("LDAP plugin does not have a Configuration property - plugin may be incompatible");
+                _logger.PolyglotError("LDAP plugin does not have a Configuration property - plugin may be incompatible");
                 return null;
             }
 
             var configObj = configProperty.GetValue(ldapPlugin);
             if (configObj == null)
             {
-                _logger.LogWarning("LDAP plugin configuration is null");
+                _logger.PolyglotWarning("LDAP plugin configuration is null");
                 return null;
             }
 
@@ -278,8 +279,8 @@ public class LdapIntegrationService : ILdapIntegrationService
 
             if (missingProperties.Count > 0)
             {
-                _logger.LogWarning(
-                    "LDAP plugin configuration is missing expected properties: {MissingProperties}. " +
+                _logger.PolyglotWarning(
+                    "LDAP plugin configuration is missing expected properties: {0}. " +
                     "The LDAP plugin version may be incompatible. Integration may not work correctly.",
                     string.Join(", ", missingProperties));
             }
@@ -305,7 +306,7 @@ public class LdapIntegrationService : ILdapIntegrationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to read LDAP plugin configuration");
+            _logger.PolyglotError(ex, "Failed to read LDAP plugin configuration");
             return null;
         }
     }

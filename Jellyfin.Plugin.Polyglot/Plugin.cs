@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.Polyglot.Configuration;
+using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Services;
 using MediaBrowser.Common;
 using MediaBrowser.Common.Configuration;
@@ -87,7 +88,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
         try
         {
-            _logger.LogInformation("Polyglot plugin uninstall: starting cleanup of mirror libraries and directories");
+            _logger.PolyglotInfo("Polyglot plugin uninstall: starting cleanup of mirror libraries and directories");
 
             // Resolve the mirror service to handle proper cleanup
             var mirrorService = _applicationHost.Resolve<IMirrorService>();
@@ -101,8 +102,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 {
                     try
                     {
-                        _logger.LogInformation(
-                            "Polyglot uninstall: deleting mirror {MirrorId} ({LibraryName})",
+                        _logger.PolyglotInfo(
+                            "Polyglot uninstall: deleting mirror {0} ({1})",
                             mirror.Id,
                             mirror.TargetLibraryName);
 
@@ -117,9 +118,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(
+                        _logger.PolyglotWarning(
                             ex,
-                            "Polyglot uninstall: failed to delete mirror {MirrorId}",
+                            "Polyglot uninstall: failed to delete mirror {0}",
                             mirror.Id);
                     }
                 }
@@ -127,7 +128,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Polyglot plugin uninstall: unexpected error during cleanup");
+            _logger.PolyglotError(ex, "Polyglot plugin uninstall: unexpected error during cleanup");
         }
 
         // Clear configuration to avoid leaving stale state behind on disk
@@ -140,7 +141,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Polyglot plugin uninstall: failed to save cleaned configuration");
+            _logger.PolyglotWarning(ex, "Polyglot plugin uninstall: failed to save cleaned configuration");
         }
     }
 }

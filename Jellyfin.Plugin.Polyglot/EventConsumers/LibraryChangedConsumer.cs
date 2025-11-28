@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -43,7 +44,7 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
     {
         _libraryManager.ItemRemoved += OnItemRemoved;
 
-        _logger.LogInformation("Library change consumer initialized");
+        _logger.PolyglotInfo("Library change consumer initialized");
         return Task.CompletedTask;
     }
 
@@ -52,7 +53,7 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
     {
         _libraryManager.ItemRemoved -= OnItemRemoved;
 
-        _logger.LogInformation("Library change consumer stopped");
+        _logger.PolyglotInfo("Library change consumer stopped");
         return Task.CompletedTask;
     }
 
@@ -74,7 +75,7 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
         // always be called. Periodic cleanup via scheduled tasks is more reliable.
         if (e.Item is CollectionFolder || e.Item is AggregateFolder)
         {
-            _logger.LogDebug("Library folder removed: {FolderName} (Type: {FolderType})", e.Item.Name, e.Item.GetType().Name);
+            _logger.PolyglotDebug("Library folder removed: {0} (Type: {1})", e.Item.Name, e.Item.GetType().Name);
 
             // Run async cleanup in background
             _ = Task.Run(async () =>
@@ -87,7 +88,7 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to cleanup orphaned mirrors after library removal");
+                    _logger.PolyglotError(ex, "Failed to cleanup orphaned mirrors after library removal");
                 }
             });
         }
@@ -105,7 +106,7 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
             return;
         }
 
-        _logger.LogInformation("Cleaned up {Count} orphaned mirrors", result.TotalCleaned);
+        _logger.PolyglotInfo("Cleaned up {0} orphaned mirrors", result.TotalCleaned);
 
         // Ensure users have access to sources that no longer have mirrors
         if (result.SourcesWithoutMirrors.Count > 0)
@@ -124,7 +125,7 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to add sources to user {UserId}", userConfig.UserId);
+                        _logger.PolyglotError(ex, "Failed to add sources to user {0}", userConfig.UserId);
                     }
                 }
             }
@@ -134,11 +135,11 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
         try
         {
             await _libraryAccessService.ReconcileAllUsersAsync(cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("Reconciled user access after cleanup");
+            _logger.PolyglotInfo("Reconciled user access after cleanup");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to reconcile user access after cleanup");
+            _logger.PolyglotError(ex, "Failed to reconcile user access after cleanup");
         }
     }
 

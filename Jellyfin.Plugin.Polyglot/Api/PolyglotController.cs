@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net.Mime;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Models;
 using Jellyfin.Plugin.Polyglot.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -133,7 +134,7 @@ public class PolyglotController : ControllerBase
         config.LanguageAlternatives.Add(alternative);
         Plugin.Instance?.SaveConfiguration();
 
-        _logger.LogInformation("Created language alternative: {Name} ({LanguageCode})", alternative.Name, alternative.LanguageCode);
+        _logger.PolyglotInfo("Created language alternative: {0} ({1})", alternative.Name, alternative.LanguageCode);
 
         return CreatedAtAction(nameof(GetAlternatives), new { id = alternative.Id }, alternative);
     }
@@ -171,14 +172,14 @@ public class PolyglotController : ControllerBase
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to delete mirror {MirrorId}", mirror.Id);
+                _logger.PolyglotError(ex, "Failed to delete mirror {0}", mirror.Id);
             }
         }
 
         config.LanguageAlternatives.Remove(alternative);
         Plugin.Instance?.SaveConfiguration();
 
-        _logger.LogInformation("Deleted language alternative: {Name}", alternative.Name);
+        _logger.PolyglotInfo("Deleted language alternative: {0}", alternative.Name);
 
         return NoContent();
     }
@@ -255,7 +256,7 @@ public class PolyglotController : ControllerBase
         alternative.MirroredLibraries.Add(mirror);
         Plugin.Instance?.SaveConfiguration();
 
-        _logger.LogInformation("Queued mirror creation for {SourceLibrary} -> {TargetLibrary}",
+        _logger.PolyglotInfo("Queued mirror creation for {0} -> {1}",
             sourceLibrary.Name, mirror.TargetLibraryName);
 
         // Create the mirror in the background
@@ -280,13 +281,13 @@ public class PolyglotController : ControllerBase
                             .ConfigureAwait(false);
                     }
 
-                    _logger.LogInformation("Updated library access for {Count} users after creating mirror {MirrorName}",
+                    _logger.PolyglotInfo("Updated library access for {0} users after creating mirror {1}",
                         usersWithThisLanguage.Count, mirror.TargetLibraryName);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Background mirror creation failed for {SourceLibrary}", sourceLibrary.Name);
+                _logger.PolyglotError(ex, "Background mirror creation failed for {0}", sourceLibrary.Name);
             }
         });
 
@@ -318,7 +319,7 @@ public class PolyglotController : ControllerBase
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Background sync failed for alternative {Name}", alternative.Name);
+                _logger.PolyglotError(ex, "Background sync failed for alternative {0}", alternative.Name);
             }
         }, cancellationToken);
 
@@ -362,7 +363,7 @@ public class PolyglotController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete mirror {MirrorId}", mirror.Id);
+            _logger.PolyglotError(ex, "Failed to delete mirror {0}", mirror.Id);
             return BadRequest($"Failed to delete mirror: {ex.Message}");
         }
 
@@ -383,15 +384,15 @@ public class PolyglotController : ControllerBase
                     .ConfigureAwait(false);
             }
 
-            _logger.LogInformation("Updated library access for {Count} users after deleting mirror {MirrorName}",
+            _logger.PolyglotInfo("Updated library access for {0} users after deleting mirror {1}",
                 usersWithThisLanguage.Count, mirror.TargetLibraryName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to update user library access after deleting mirror");
+            _logger.PolyglotError(ex, "Failed to update user library access after deleting mirror");
         }
 
-        _logger.LogInformation("Deleted mirror: {MirrorName} from alternative {AlternativeName}", 
+        _logger.PolyglotInfo("Deleted mirror: {0} from alternative {1}", 
             mirror.TargetLibraryName, alternative.Name);
 
         return NoContent();
@@ -458,7 +459,7 @@ public class PolyglotController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to set language for user {UserId}", userId);
+            _logger.PolyglotError(ex, "Failed to set language for user {0}", userId);
             return BadRequest(ex.Message);
         }
     }
@@ -553,7 +554,7 @@ public class PolyglotController : ControllerBase
         config.LdapGroupMappings.Add(mapping);
         Plugin.Instance?.SaveConfiguration();
 
-        _logger.LogInformation("Added LDAP group mapping: {GroupDn} -> {LanguageName}", mapping.LdapGroupDn, alternative.Name);
+        _logger.PolyglotInfo("Added LDAP group mapping: {0} -> {1}", mapping.LdapGroupDn, alternative.Name);
 
         return CreatedAtAction(nameof(GetLdapGroups), null, mapping);
     }
@@ -581,7 +582,7 @@ public class PolyglotController : ControllerBase
         config.LdapGroupMappings.Remove(mapping);
         Plugin.Instance?.SaveConfiguration();
 
-        _logger.LogInformation("Deleted LDAP group mapping: {GroupDn}", mapping.LdapGroupDn);
+        _logger.PolyglotInfo("Deleted LDAP group mapping: {0}", mapping.LdapGroupDn);
 
         return NoContent();
     }
