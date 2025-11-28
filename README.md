@@ -183,15 +183,14 @@ Mirrors stay in sync through:
 -   **Scheduled task** — Runs every 6 hours by default
 -   **Orphan cleanup** — Removes mirror configs when source libraries are deleted
 
-## Building from Source
+## Contributing
 
-```bash
-git clone https://github.com/Maronato/jellyfin-plugin-polyglot.git
-cd jellyfin-plugin-polyglot/Jellyfin.Plugin.Polyglot
-dotnet build --configuration Release
-```
+Interested in contributing? Check out the [Developer Guide](Jellyfin.Plugin.Polyglot/README.md) for:
 
-Output: `bin/Release/net8.0/Jellyfin.Plugin.Polyglot.dll`
+-   Architecture overview and system diagrams
+-   Code organization and service documentation
+-   Build and test instructions
+-   Contribution guidelines and code style
 
 ## License
 
