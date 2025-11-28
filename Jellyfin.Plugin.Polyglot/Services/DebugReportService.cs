@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Models;
 using MediaBrowser.Common;
 using MediaBrowser.Common.Plugins;
@@ -428,18 +429,34 @@ public partial class DebugReportService : IDebugReportService
 
     private List<PluginSummaryInfo> GetOtherPlugins()
     {
-        var plugins = _applicationHost.GetExports<IPlugin>();
-        var polyglotId = Plugin.Instance?.Id ?? Guid.Empty;
+        try
+        {
+            var plugins = _applicationHost.GetExports<IPlugin>();
+            var polyglotId = Plugin.Instance?.Id ?? Guid.Empty;
 
-        return plugins
-            .Where(p => p.Id != polyglotId)
-            .Select(p => new PluginSummaryInfo
+            return plugins
+                .Where(p => p.Id != polyglotId)
+                .Select(p => new PluginSummaryInfo
+                {
+                    Name = p.Name,
+                    Version = p.Version?.ToString() ?? "Unknown"
+                })
+                .OrderBy(p => p.Name)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            // Log and return empty list if we can't enumerate plugins (e.g., DI loop)
+            _logger.PolyglotWarning(ex, "Could not enumerate other plugins for debug report");
+            return new List<PluginSummaryInfo>
             {
-                Name = p.Name,
-                Version = p.Version?.ToString() ?? "Unknown"
-            })
-            .OrderBy(p => p.Name)
-            .ToList();
+                new PluginSummaryInfo
+                {
+                    Name = "(Plugin enumeration unavailable)",
+                    Version = ex.Message
+                }
+            };
+        }
     }
 
     private static List<LogEntryInfo> GetRecentLogs(DebugReportOptions options)
