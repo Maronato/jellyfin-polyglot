@@ -10,6 +10,14 @@
     "repositoryUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot",
     "versions": [
       {
+        "version": "0.8.3.0",
+        "changelog": "## What's Changed\n\n### 🔧 Improvements\n- Add JellyfinCompatibility helper for version compatibility\n  - Manages compatibility between Jellyfin versions 10.10.x and 10.11+\n  - Handles property name changes via reflection for `TaskTriggerInfo` creation\n- Enhance debug logging in PolyglotController for better diagnostics\n  - Added comprehensive debug logging in `GetAlternatives` and `AddLibraryMirror` methods\n  - Included details such as plugin instance hash, configuration hash, and mirror counts to aid in troubleshooting\n- Enhance DebugReportService to handle plugin enumeration errors\n  - Wrapped the plugin enumeration logic in a try-catch block to gracefully handle exceptions\n  - Returns a placeholder `PluginSummaryInfo` when enumeration is unavailable, improving user feedback\n\n### 🔄 Refactoring\n- Update `SaveConfiguration` method to use `UpdateConfiguration` for improved clarity and maintainability\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.8.2...v0.8.3",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot/releases/download/v0.8.3/polyglot_0.8.3.0.zip",
+        "checksum": "bc4d43f2664060ff4e366ca7292ad877",
+        "timestamp": "2025-11-28T23:45:46Z"
+      },
+      {
         "version": "0.8.2.0",
         "changelog": "## What's Changed\n\n### 🔧 Improvements\n- Add debug logging to PolyglotController for configuration diagnostics\n  - Track the number of language alternatives and total mirrors\n  - Enhanced logging during mirror creation to confirm additions and compare mirror counts\n- Enhance PluginConfiguration to use HashSet for excluded extensions and directories\n  - Improved performance and case-insensitive uniqueness\n  - Added automatic normalization to lowercase for consistent handling of file extensions and directory names\n\n### 🐛 Bug Fixes\n- Improve orphaned mirror cleanup logic in MirrorService\n  - When a source library is deleted, both the mirror library and its associated files are now properly removed\n\n### ✅ Testing\n- Added unit tests to verify normalization and deduplication behavior for excluded extensions and directories\n- Added test case to verify mirror library deletion when source library is missing\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.8.1...v0.8.2",
         "targetAbi": "10.10.0.0",
