@@ -10,6 +10,14 @@
     "repositoryUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot",
     "versions": [
       {
+        "version": "0.8.4.0",
+        "changelog": "## What's Changed\n\n### 🔧 Improvements\n- Enhance SaveConfiguration method with deep cloning for Jellyfin compatibility\n  - Updated the `SaveConfiguration` method to create a deep clone of the configuration using JSON serialization before updating\n  - Ensures compliance with Jellyfin's configuration API, which requires the entire configuration object to be replaced rather than modified in-place\n  - Added debug logging to track references and mirror counts before and after configuration updates, improving diagnostics\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.8.3...v0.8.4",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot/releases/download/v0.8.4/polyglot_0.8.4.0.zip",
+        "checksum": "03368f6c5fb980ebfbfe57d6ad2642d5",
+        "timestamp": "2025-11-29T00:23:00Z"
+      },
+      {
         "version": "0.8.3.0",
         "changelog": "## What's Changed\n\n### 🔧 Improvements\n- Add JellyfinCompatibility helper for version compatibility\n  - Manages compatibility between Jellyfin versions 10.10.x and 10.11+\n  - Handles property name changes via reflection for `TaskTriggerInfo` creation\n- Enhance debug logging in PolyglotController for better diagnostics\n  - Added comprehensive debug logging in `GetAlternatives` and `AddLibraryMirror` methods\n  - Included details such as plugin instance hash, configuration hash, and mirror counts to aid in troubleshooting\n- Enhance DebugReportService to handle plugin enumeration errors\n  - Wrapped the plugin enumeration logic in a try-catch block to gracefully handle exceptions\n  - Returns a placeholder `PluginSummaryInfo` when enumeration is unavailable, improving user feedback\n\n### 🔄 Refactoring\n- Update `SaveConfiguration` method to use `UpdateConfiguration` for improved clarity and maintainability\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.8.2...v0.8.3",
         "targetAbi": "10.10.0.0",
