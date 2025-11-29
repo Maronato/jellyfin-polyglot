@@ -73,23 +73,15 @@ public class PolyglotController : ControllerBase
     /// </summary>
     [HttpGet("Alternatives")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ResponseCache(NoStore = true)]
     public ActionResult<IEnumerable<LanguageAlternative>> GetAlternatives()
     {
         var config = Plugin.Instance?.Configuration;
         var alternatives = config?.LanguageAlternatives ?? new List<LanguageAlternative>();
         
-        // Comprehensive debug logging to diagnose configuration visibility issues
+        // Debug logging to help diagnose configuration visibility issues
         var totalMirrors = alternatives.Sum(a => a.MirroredLibraries?.Count ?? 0);
-        var mirrorDetails = string.Join(", ", alternatives.Select(a => 
-            $"{a.Name}:{a.MirroredLibraries?.Count ?? 0}"));
-        _logger.PolyglotDebug(
-            "GetAlternatives: Plugin.Instance={0}, config hash={1}, returning {2} alternatives with {3} total mirrors [{4}]", 
-            Plugin.Instance?.GetHashCode(),
-            config?.GetHashCode(),
-            alternatives.Count, 
-            totalMirrors,
-            mirrorDetails);
+        _logger.PolyglotDebug("GetAlternatives: returning {0} alternatives with {1} total mirrors", 
+            alternatives.Count, totalMirrors);
         
         return Ok(alternatives);
     }
@@ -271,23 +263,12 @@ public class PolyglotController : ControllerBase
         alternative.MirroredLibraries.Add(mirror);
         Plugin.Instance?.SaveConfiguration();
 
-        // Comprehensive debug logging to diagnose configuration sync issues
+        // Debug logging to confirm mirror was added to configuration
         var currentMirrorCount = alternative.MirroredLibraries.Count;
-        var configFromInstance = Plugin.Instance?.Configuration;
-        var altFromConfig = configFromInstance?.LanguageAlternatives.FirstOrDefault(a => a.Id == id);
-        var configMirrorCount = altFromConfig?.MirroredLibraries?.Count ?? -1;
-        var mirrorIds = string.Join(",", altFromConfig?.MirroredLibraries?.Select(m => m.Id.ToString()[..8]) ?? []);
-        
-        _logger.PolyglotInfo(
-            "AddLibraryMirror: Created mirror {0}. Plugin.Instance={1}, config hash={2}, " +
-            "alternative ref match={3}, local mirrors={4}, config mirrors={5}, mirror IDs=[{6}]",
-            mirror.Id.ToString()[..8],
-            Plugin.Instance?.GetHashCode(),
-            configFromInstance?.GetHashCode(),
-            ReferenceEquals(alternative, altFromConfig),
-            currentMirrorCount,
-            configMirrorCount,
-            mirrorIds);
+        var configMirrorCount = Plugin.Instance?.Configuration?.LanguageAlternatives
+            .FirstOrDefault(a => a.Id == id)?.MirroredLibraries?.Count ?? -1;
+        _logger.PolyglotInfo("Queued mirror creation for {0} -> {1}. Alternative now has {2} mirrors (config check: {3})",
+            sourceLibrary.Name, mirror.TargetLibraryName, currentMirrorCount, configMirrorCount);
 
         // Create the mirror in the background
         _ = Task.Run(async () =>
