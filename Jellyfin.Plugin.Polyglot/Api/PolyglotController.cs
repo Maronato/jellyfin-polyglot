@@ -76,14 +76,7 @@ public class PolyglotController : ControllerBase
     public ActionResult<IEnumerable<LanguageAlternative>> GetAlternatives()
     {
         var config = Plugin.Instance?.Configuration;
-        var alternatives = config?.LanguageAlternatives ?? new List<LanguageAlternative>();
-        
-        // Debug logging to help diagnose configuration visibility issues
-        var totalMirrors = alternatives.Sum(a => a.MirroredLibraries?.Count ?? 0);
-        _logger.PolyglotDebug("GetAlternatives: returning {0} alternatives with {1} total mirrors", 
-            alternatives.Count, totalMirrors);
-        
-        return Ok(alternatives);
+        return Ok(config?.LanguageAlternatives ?? new List<LanguageAlternative>());
     }
 
     /// <summary>
@@ -263,12 +256,8 @@ public class PolyglotController : ControllerBase
         alternative.MirroredLibraries.Add(mirror);
         Plugin.Instance?.SaveConfiguration();
 
-        // Debug logging to confirm mirror was added to configuration
-        var currentMirrorCount = alternative.MirroredLibraries.Count;
-        var configMirrorCount = Plugin.Instance?.Configuration?.LanguageAlternatives
-            .FirstOrDefault(a => a.Id == id)?.MirroredLibraries?.Count ?? -1;
-        _logger.PolyglotInfo("Queued mirror creation for {0} -> {1}. Alternative now has {2} mirrors (config check: {3})",
-            sourceLibrary.Name, mirror.TargetLibraryName, currentMirrorCount, configMirrorCount);
+        _logger.PolyglotInfo("Queued mirror creation for {0} -> {1}",
+            sourceLibrary.Name, mirror.TargetLibraryName);
 
         // Create the mirror in the background
         _ = Task.Run(async () =>
