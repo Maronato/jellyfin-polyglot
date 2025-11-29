@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text.Json;
 using Jellyfin.Plugin.Polyglot.Configuration;
 using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Services;
@@ -62,7 +60,6 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// </summary>
     public PluginConfiguration PluginConfiguration => Configuration;
 
-
     /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()
     {
@@ -77,48 +74,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     }
 
     /// <summary>
-    /// Saves the plugin configuration by cloning and updating through Jellyfin's proper flow.
+    /// Saves the plugin configuration.
     /// </summary>
-    /// <remarks>
-    /// This creates a deep clone of the configuration and passes it to UpdateConfiguration,
-    /// which replaces the internal _configuration reference. This is necessary because
-    /// Jellyfin's configuration API expects the configuration object to be replaced entirely,
-    /// not modified in-place. Without this, changes may not be visible through the
-    /// /Plugins/{id}/Configuration endpoint.
-    /// </remarks>
     public new void SaveConfiguration()
     {
-        // Deep clone the configuration via JSON serialization
-        // This creates a NEW object that UpdateConfiguration will use to replace _configuration
-        var json = JsonSerializer.Serialize(base.Configuration);
-        var clonedConfig = JsonSerializer.Deserialize<PluginConfiguration>(json);
-        
-        if (clonedConfig != null)
-        {
-            // RuntimeHelpers.GetHashCode gives identity hash (based on memory reference, not content)
-            var oldRef = RuntimeHelpers.GetHashCode(base.Configuration);
-            var clonedRef = RuntimeHelpers.GetHashCode(clonedConfig);
-            var oldMirrorCount = base.Configuration.LanguageAlternatives?.Sum(a => a.MirroredLibraries?.Count ?? 0) ?? 0;
-            var clonedMirrorCount = clonedConfig.LanguageAlternatives?.Sum(a => a.MirroredLibraries?.Count ?? 0) ?? 0;
-            
-            _logger.PolyglotDebug(
-                "SaveConfiguration: BEFORE - old ref=0x{0:X8} mirrors={1}, clone ref=0x{2:X8} mirrors={3}",
-                oldRef, oldMirrorCount, clonedRef, clonedMirrorCount);
-            
-            // This replaces _configuration with the cloned object
-            UpdateConfiguration(clonedConfig);
-            
-            var newRef = RuntimeHelpers.GetHashCode(base.Configuration);
-            var newMirrorCount = base.Configuration.LanguageAlternatives?.Sum(a => a.MirroredLibraries?.Count ?? 0) ?? 0;
-            _logger.PolyglotDebug(
-                "SaveConfiguration: AFTER - base.Configuration ref=0x{0:X8} mirrors={1}, same as clone={2}",
-                newRef, newMirrorCount, newRef == clonedRef);
-        }
-        else
-        {
-            _logger.PolyglotWarning("SaveConfiguration: failed to clone configuration, falling back to direct save");
-            base.SaveConfiguration();
-        }
+        UpdateConfiguration(Configuration);
     }
 
     /// <inheritdoc />
