@@ -24,11 +24,13 @@ public class UserLanguageServiceTests : IDisposable
         _context = new PluginTestContext();
         _userManagerMock = new Mock<IUserManager>();
         _libraryAccessServiceMock = new Mock<ILibraryAccessService>();
+        var configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var logger = new Mock<ILogger<UserLanguageService>>();
 
         _service = new UserLanguageService(
             _userManagerMock.Object,
             _libraryAccessServiceMock.Object,
+            configServiceMock.Object,
             logger.Object);
     }
 

@@ -16,14 +16,21 @@ public class MirrorSyncTaskTests : IDisposable
 {
     private readonly PluginTestContext _context;
     private readonly Mock<IMirrorService> _mirrorServiceMock;
+    private readonly Mock<IConfigurationService> _configServiceMock;
     private readonly MirrorSyncTask _task;
 
     public MirrorSyncTaskTests()
     {
         _context = new PluginTestContext();
         _mirrorServiceMock = new Mock<IMirrorService>();
+        _configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var logger = new Mock<ILogger<MirrorSyncTask>>();
-        _task = new MirrorSyncTask(_mirrorServiceMock.Object, logger.Object);
+        _task = new MirrorSyncTask(_mirrorServiceMock.Object, _configServiceMock.Object, logger.Object);
+
+        // Default setup for SyncAllMirrorsAsync to return success
+        _mirrorServiceMock
+            .Setup(s => s.SyncAllMirrorsAsync(It.IsAny<Guid>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncAllResult { Status = SyncAllStatus.Completed });
     }
 
     public void Dispose() => _context.Dispose();
@@ -60,7 +67,7 @@ public class MirrorSyncTaskTests : IDisposable
 
         // Assert - should not call SyncAllMirrorsAsync if no alternatives
         _mirrorServiceMock.Verify(
-            s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
+            s => s.SyncAllMirrorsAsync(It.IsAny<Guid>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -77,7 +84,7 @@ public class MirrorSyncTaskTests : IDisposable
 
         // Assert - should sync each alternative
         _mirrorServiceMock.Verify(
-            s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
+            s => s.SyncAllMirrorsAsync(It.IsAny<Guid>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
             Times.Exactly(2));
     }
 
@@ -96,8 +103,8 @@ public class MirrorSyncTaskTests : IDisposable
             .Callback(() => callOrder.Add("cleanup"));
 
         _mirrorServiceMock
-            .Setup(s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask)
+            .Setup(s => s.SyncAllMirrorsAsync(It.IsAny<Guid>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncAllResult { Status = SyncAllStatus.Completed })
             .Callback(() => callOrder.Add("sync"));
 
         // Act
@@ -115,7 +122,7 @@ public class MirrorSyncTaskTests : IDisposable
         // Arrange
         _context.AddLanguageAlternative("Portuguese", "pt-BR");
         _mirrorServiceMock
-            .Setup(s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.SyncAllMirrorsAsync(It.IsAny<Guid>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Sync failed"));
 
         var progress = new Progress<double>();
@@ -136,6 +143,7 @@ public class UserLanguageSyncTaskTests : IDisposable
     private readonly PluginTestContext _context;
     private readonly Mock<ILibraryAccessService> _libraryAccessServiceMock;
     private readonly Mock<IUserLanguageService> _userLanguageServiceMock;
+    private readonly Mock<IConfigurationService> _configServiceMock;
     private readonly UserLanguageSyncTask _task;
 
     public UserLanguageSyncTaskTests()
@@ -143,11 +151,13 @@ public class UserLanguageSyncTaskTests : IDisposable
         _context = new PluginTestContext();
         _libraryAccessServiceMock = new Mock<ILibraryAccessService>();
         _userLanguageServiceMock = new Mock<IUserLanguageService>();
+        _configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var logger = new Mock<ILogger<UserLanguageSyncTask>>();
 
         _task = new UserLanguageSyncTask(
             _libraryAccessServiceMock.Object,
             _userLanguageServiceMock.Object,
+            _configServiceMock.Object,
             logger.Object);
     }
 
@@ -197,14 +207,21 @@ public class MirrorPostScanTaskTests : IDisposable
 {
     private readonly PluginTestContext _context;
     private readonly Mock<IMirrorService> _mirrorServiceMock;
+    private readonly Mock<IConfigurationService> _configServiceMock;
     private readonly MirrorPostScanTask _task;
 
     public MirrorPostScanTaskTests()
     {
         _context = new PluginTestContext();
         _mirrorServiceMock = new Mock<IMirrorService>();
+        _configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var logger = new Mock<ILogger<MirrorPostScanTask>>();
-        _task = new MirrorPostScanTask(_mirrorServiceMock.Object, logger.Object);
+        _task = new MirrorPostScanTask(_mirrorServiceMock.Object, _configServiceMock.Object, logger.Object);
+
+        // Default setup for SyncAllMirrorsAsync to return success
+        _mirrorServiceMock
+            .Setup(s => s.SyncAllMirrorsAsync(It.IsAny<Guid>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SyncAllResult { Status = SyncAllStatus.Completed });
     }
 
     public void Dispose() => _context.Dispose();
@@ -223,7 +240,7 @@ public class MirrorPostScanTaskTests : IDisposable
 
         // Assert
         _mirrorServiceMock.Verify(
-            s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
+            s => s.SyncAllMirrorsAsync(It.IsAny<Guid>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -241,7 +258,7 @@ public class MirrorPostScanTaskTests : IDisposable
 
         // Assert
         _mirrorServiceMock.Verify(
-            s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
+            s => s.SyncAllMirrorsAsync(It.IsAny<Guid>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -258,7 +275,7 @@ public class MirrorPostScanTaskTests : IDisposable
 
         // Assert
         _mirrorServiceMock.Verify(
-            s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
+            s => s.SyncAllMirrorsAsync(It.IsAny<Guid>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -275,7 +292,7 @@ public class MirrorPostScanTaskTests : IDisposable
 
         // Assert - should skip alternatives with no mirrors
         _mirrorServiceMock.Verify(
-            s => s.SyncAllMirrorsAsync(It.IsAny<Models.LanguageAlternative>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
+            s => s.SyncAllMirrorsAsync(It.IsAny<Guid>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 }

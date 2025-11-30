@@ -11,11 +11,13 @@ namespace Jellyfin.Plugin.Polyglot.Tasks;
 
 /// <summary>
 /// Scheduled task that reconciles user library access with their language assignments.
+/// Uses IConfigurationService for config access.
 /// </summary>
 public class UserLanguageSyncTask : IScheduledTask
 {
     private readonly ILibraryAccessService _libraryAccessService;
     private readonly IUserLanguageService _userLanguageService;
+    private readonly IConfigurationService _configService;
     private readonly ILogger<UserLanguageSyncTask> _logger;
 
     /// <summary>
@@ -24,10 +26,12 @@ public class UserLanguageSyncTask : IScheduledTask
     public UserLanguageSyncTask(
         ILibraryAccessService libraryAccessService,
         IUserLanguageService userLanguageService,
+        IConfigurationService configService,
         ILogger<UserLanguageSyncTask> logger)
     {
         _libraryAccessService = libraryAccessService;
         _userLanguageService = userLanguageService;
+        _configService = configService;
         _logger = logger;
     }
 
@@ -47,7 +51,7 @@ public class UserLanguageSyncTask : IScheduledTask
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
     {
         // Parse the configured time (default 3:00 AM)
-        var config = Plugin.Instance?.Configuration;
+        var config = _configService.GetConfiguration();
         var timeString = config?.UserReconciliationTime ?? "03:00";
 
         if (!TimeSpan.TryParse(timeString, out var time))
@@ -55,7 +59,6 @@ public class UserLanguageSyncTask : IScheduledTask
             time = new TimeSpan(3, 0, 0);
         }
 
-        // Use compatibility helper to handle string (10.10.x) vs enum (10.11+) Type property
         return new[]
         {
             JellyfinCompatibility.CreateDailyTrigger(time.Ticks)
@@ -65,16 +68,16 @@ public class UserLanguageSyncTask : IScheduledTask
     /// <inheritdoc />
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        _logger.PolyglotInfo("Starting user language sync task");
+        _logger.PolyglotInfo("UserLanguageSyncTask: Starting user sync");
 
-        var config = Plugin.Instance?.Configuration;
+        var config = _configService.GetConfiguration();
         if (config == null)
         {
-            _logger.PolyglotWarning("Plugin configuration not available");
+            _logger.PolyglotWarning("UserLanguageSyncTask: Configuration not available");
             return;
         }
 
-        progress.Report(0);
+        SafeReportProgress(progress, 0);
 
         try
         {
@@ -85,13 +88,15 @@ public class UserLanguageSyncTask : IScheduledTask
             var processedUsers = 0;
             var reconciledUsers = 0;
 
+            _logger.PolyglotDebug("UserLanguageSyncTask: Processing {0} users", totalUsers);
+
             foreach (var user in userList)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 try
                 {
-                    // Reconcile all plugin-managed users (both with specific language and "Default")
+                    // Reconcile all plugin-managed users
                     if (user.IsPluginManaged)
                     {
                         var wasReconciled = await _libraryAccessService.ReconcileUserAccessAsync(user.Id, cancellationToken)
@@ -100,31 +105,48 @@ public class UserLanguageSyncTask : IScheduledTask
                         if (wasReconciled)
                         {
                             reconciledUsers++;
-                            _logger.PolyglotInfo("Reconciled library access for user {0}", user.Username);
+                            _logger.PolyglotInfo("UserLanguageSyncTask: Reconciled access for user {0}", user.Username);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.PolyglotError(ex, "Failed to reconcile user {0} ({1})", user.Username, user.Id);
+                    _logger.PolyglotError(ex, "UserLanguageSyncTask: Failed to reconcile user {0}", user.Username);
                 }
 
                 processedUsers++;
-                progress.Report((double)processedUsers / totalUsers * 100);
+                if (totalUsers > 0)
+                {
+                    SafeReportProgress(progress, (double)processedUsers / totalUsers * 100);
+                }
             }
 
             _logger.PolyglotInfo(
-                "User language sync completed: {0} users processed, {1} reconciled",
+                "UserLanguageSyncTask: Completed - {0} users processed, {1} reconciled",
                 totalUsers,
                 reconciledUsers);
         }
         catch (Exception ex)
         {
-            _logger.PolyglotError(ex, "User language sync task failed");
+            _logger.PolyglotError(ex, "UserLanguageSyncTask: Failed");
             throw;
         }
 
-        progress.Report(100);
+        SafeReportProgress(progress, 100);
+    }
+
+    /// <summary>
+    /// Safely reports progress without throwing if the callback fails.
+    /// </summary>
+    private void SafeReportProgress(IProgress<double> progress, double value)
+    {
+        try
+        {
+            progress.Report(value);
+        }
+        catch (Exception ex)
+        {
+            _logger.PolyglotDebug("UserLanguageSyncTask: Progress callback failed: {0}", ex.Message);
+        }
     }
 }
-

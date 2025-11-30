@@ -31,17 +31,20 @@ public class UserLanguageAssignmentBehaviorTests : IDisposable
         _userManagerMock = new Mock<IUserManager>();
         _libraryManagerMock = new Mock<ILibraryManager>();
         _libraryAccessServiceMock = new Mock<ILibraryAccessService>();
+        var configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var userLogger = new Mock<ILogger<UserLanguageService>>();
         var accessLogger = new Mock<ILogger<LibraryAccessService>>();
 
         _userLanguageService = new UserLanguageService(
             _userManagerMock.Object,
             _libraryAccessServiceMock.Object,
+            configServiceMock.Object,
             userLogger.Object);
 
         _libraryAccessService = new LibraryAccessService(
             _userManagerMock.Object,
             _libraryManagerMock.Object,
+            configServiceMock.Object,
             accessLogger.Object);
     }
 
@@ -327,17 +330,20 @@ public class PluginManagedBehaviorTests : IDisposable
         _userManagerMock = new Mock<IUserManager>();
         _libraryManagerMock = new Mock<ILibraryManager>();
         _libraryAccessServiceMock = new Mock<ILibraryAccessService>();
+        var configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var userLogger = new Mock<ILogger<UserLanguageService>>();
         var accessLogger = new Mock<ILogger<LibraryAccessService>>();
 
         _userLanguageService = new UserLanguageService(
             _userManagerMock.Object,
             _libraryAccessServiceMock.Object,
+            configServiceMock.Object,
             userLogger.Object);
 
         _libraryAccessService = new LibraryAccessService(
             _userManagerMock.Object,
             _libraryManagerMock.Object,
+            configServiceMock.Object,
             accessLogger.Object);
     }
 

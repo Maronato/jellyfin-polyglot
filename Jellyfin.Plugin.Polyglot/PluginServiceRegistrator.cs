@@ -19,6 +19,9 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     /// <inheritdoc />
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
+        // Configuration service - must be registered first as other services depend on it
+        serviceCollection.AddSingleton<IConfigurationService, ConfigurationService>();
+
         // Core services
         serviceCollection.AddSingleton<IMirrorService, MirrorService>();
         serviceCollection.AddSingleton<IUserLanguageService, UserLanguageService>();

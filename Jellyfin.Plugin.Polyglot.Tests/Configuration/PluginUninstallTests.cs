@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Jellyfin.Plugin.Polyglot.Models;
+using Jellyfin.Plugin.Polyglot.Services;
 using Jellyfin.Plugin.Polyglot.Tests.TestHelpers;
 using Moq;
 using Xunit;
@@ -27,19 +28,21 @@ public class PluginUninstallTests
         // Set up MirrorService mock to accept any delete call
         context.MirrorServiceMock
             .Setup(m => m.DeleteMirrorAsync(
-                It.IsAny<LibraryMirror>(),
+                It.IsAny<Guid>(),
+                It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(new DeleteMirrorResult { RemovedFromConfig = true });
 
         // Act
         context.PluginInstance.OnUninstalling();
 
-        // Assert: DeleteMirrorAsync was called for each mirror with deleteLibrary=true, deleteFiles=true
+        // Assert: DeleteMirrorAsync was called for each mirror with deleteLibrary=true, deleteFiles=true, forceConfigRemoval=true
         context.MirrorServiceMock.Verify(
             m => m.DeleteMirrorAsync(
-                It.Is<LibraryMirror>(mir => mir.Id == mirror1.Id),
+                mirror1.Id,
+                true,
                 true,
                 true,
                 It.IsAny<CancellationToken>()),
@@ -47,7 +50,8 @@ public class PluginUninstallTests
 
         context.MirrorServiceMock.Verify(
             m => m.DeleteMirrorAsync(
-                It.Is<LibraryMirror>(mir => mir.Id == mirror2.Id),
+                mirror2.Id,
+                true,
                 true,
                 true,
                 It.IsAny<CancellationToken>()),
@@ -55,7 +59,8 @@ public class PluginUninstallTests
 
         context.MirrorServiceMock.Verify(
             m => m.DeleteMirrorAsync(
-                It.Is<LibraryMirror>(mir => mir.Id == mirror3.Id),
+                mirror3.Id,
+                true,
                 true,
                 true,
                 It.IsAny<CancellationToken>()),
@@ -64,7 +69,8 @@ public class PluginUninstallTests
         // Total of 3 calls
         context.MirrorServiceMock.Verify(
             m => m.DeleteMirrorAsync(
-                It.IsAny<LibraryMirror>(),
+                It.IsAny<Guid>(),
+                It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()),
@@ -84,11 +90,12 @@ public class PluginUninstallTests
 
         context.MirrorServiceMock
             .Setup(m => m.DeleteMirrorAsync(
-                It.IsAny<LibraryMirror>(),
+                It.IsAny<Guid>(),
+                It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(new DeleteMirrorResult { RemovedFromConfig = true });
 
         // Act
         context.PluginInstance.OnUninstalling();
@@ -112,7 +119,8 @@ public class PluginUninstallTests
         // First delete throws, second succeeds
         context.MirrorServiceMock
             .Setup(m => m.DeleteMirrorAsync(
-                It.Is<LibraryMirror>(mir => mir.Id == mirror1.Id),
+                mirror1.Id,
+                It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
@@ -120,11 +128,12 @@ public class PluginUninstallTests
 
         context.MirrorServiceMock
             .Setup(m => m.DeleteMirrorAsync(
-                It.Is<LibraryMirror>(mir => mir.Id == mirror2.Id),
+                mirror2.Id,
+                It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(new DeleteMirrorResult { RemovedFromConfig = true });
 
         // Act - should not throw
         var act = () => context.PluginInstance.OnUninstalling();
@@ -133,11 +142,11 @@ public class PluginUninstallTests
         // Assert: both mirrors were attempted
         context.MirrorServiceMock.Verify(
             m => m.DeleteMirrorAsync(
-                It.IsAny<LibraryMirror>(),
+                It.IsAny<Guid>(),
+                It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()),
             Times.Exactly(2));
     }
 }
-

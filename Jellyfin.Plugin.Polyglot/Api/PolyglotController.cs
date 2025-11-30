@@ -21,6 +21,7 @@ namespace Jellyfin.Plugin.Polyglot.Api;
 
 /// <summary>
 /// REST API controller for the Polyglot plugin.
+/// Uses IConfigurationService for all config modifications to prevent stale reference bugs.
 /// </summary>
 [ApiController]
 [Route("Polyglot")]
@@ -33,6 +34,7 @@ public class PolyglotController : ControllerBase
     private readonly ILibraryAccessService _libraryAccessService;
     private readonly ILdapIntegrationService _ldapIntegrationService;
     private readonly IDebugReportService _debugReportService;
+    private readonly IConfigurationService _configService;
     private readonly ILocalizationManager _localizationManager;
     private readonly IServerConfigurationManager _serverConfigurationManager;
     private readonly ILogger<PolyglotController> _logger;
@@ -46,6 +48,7 @@ public class PolyglotController : ControllerBase
         ILibraryAccessService libraryAccessService,
         ILdapIntegrationService ldapIntegrationService,
         IDebugReportService debugReportService,
+        IConfigurationService configService,
         ILocalizationManager localizationManager,
         IServerConfigurationManager serverConfigurationManager,
         ILogger<PolyglotController> logger)
@@ -55,6 +58,7 @@ public class PolyglotController : ControllerBase
         _libraryAccessService = libraryAccessService;
         _ldapIntegrationService = ldapIntegrationService;
         _debugReportService = debugReportService;
+        _configService = configService;
         _localizationManager = localizationManager;
         _serverConfigurationManager = serverConfigurationManager;
         _logger = logger;
@@ -70,19 +74,15 @@ public class PolyglotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<UIConfigResponse> GetUIConfig()
     {
-        var config = Plugin.Instance?.Configuration;
+        var config = _configService.GetConfiguration();
         if (config == null)
         {
             return StatusCode(StatusCodes.Status500InternalServerError, "Plugin not configured");
         }
 
-        // Get libraries
         var libraries = _mirrorService.GetJellyfinLibraries().ToList();
-
-        // Get users with language assignments
         var users = _userLanguageService.GetAllUsersWithLanguages().ToList();
 
-        // Get cultures and countries from localization manager
         var cultures = _localizationManager.GetCultures()
             .OrderBy(c => c.DisplayName)
             .Select(c => new CultureInfo
@@ -105,16 +105,22 @@ public class PolyglotController : ControllerBase
             })
             .ToList();
 
-        // Get LDAP status
         var ldapStatus = _ldapIntegrationService.GetLdapStatus();
-
-        // Get server configuration
         var serverConfig = _serverConfigurationManager.Configuration;
+
+        // Use thread-safe deep copies for collection access to prevent
+        // race conditions during JSON serialization
+        var alternatives = _configService.GetAlternatives().ToList();
+        var ldapMappings = _configService.GetLdapGroupMappings().ToList();
+        var excludedExtensions = _configService.GetExcludedExtensions().ToList();
+        var excludedDirectories = _configService.GetExcludedDirectories().ToList();
+        var defaultExcludedExtensions = _configService.GetDefaultExcludedExtensions().ToList();
+        var defaultExcludedDirectories = _configService.GetDefaultExcludedDirectories().ToList();
 
         var response = new UIConfigResponse
         {
             Libraries = libraries,
-            Alternatives = config.LanguageAlternatives,
+            Alternatives = alternatives,
             Users = users,
             Cultures = cultures,
             Countries = countries,
@@ -124,12 +130,13 @@ public class PolyglotController : ControllerBase
                 AutoManageNewUsers = config.AutoManageNewUsers,
                 DefaultLanguageAlternativeId = config.DefaultLanguageAlternativeId,
                 SyncMirrorsAfterLibraryScan = config.SyncMirrorsAfterLibraryScan,
-                ExcludedExtensions = config.ExcludedExtensions.ToList(),
-                ExcludedDirectories = config.ExcludedDirectories.ToList(),
-                DefaultExcludedExtensions = config.DefaultExcludedExtensions.ToList(),
-                DefaultExcludedDirectories = config.DefaultExcludedDirectories.ToList(),
+                ExcludedExtensions = excludedExtensions,
+                ExcludedDirectories = excludedDirectories,
+                DefaultExcludedExtensions = defaultExcludedExtensions,
+                DefaultExcludedDirectories = defaultExcludedDirectories,
                 EnableLdapIntegration = config.EnableLdapIntegration,
-                LdapGroupMappings = config.LdapGroupMappings
+                FallbackOnLdapFailure = config.FallbackOnLdapFailure,
+                LdapGroupMappings = ldapMappings
             },
             ServerConfig = new ServerConfigInfo
             {
@@ -150,63 +157,87 @@ public class PolyglotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult<UIConfigResponse> UpdateUIConfig([FromBody] UIConfigUpdateRequest request)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
+        _logger.PolyglotDebug("UpdateUIConfig: Processing settings update request");
+
+        if (request.Settings == null)
         {
-            return StatusCode(StatusCodes.Status500InternalServerError, "Plugin not configured");
+            return GetUIConfig();
         }
 
-        // Apply settings updates (only if provided)
-        if (request.Settings != null)
-        {
-            if (request.Settings.AutoManageNewUsers.HasValue)
-            {
-                config.AutoManageNewUsers = request.Settings.AutoManageNewUsers.Value;
-            }
+        // Capture request settings for use in closure
+        var settings = request.Settings;
+        string? validationError = null;
 
-            // DefaultLanguageAlternativeId can be explicitly set to null to clear it
-            if (request.Settings.DefaultLanguageAlternativeIdProvided)
+        // Apply all settings atomically - validation happens inside the lock to prevent race conditions
+        // Using Func overload to avoid saving configuration if validation fails
+        var saved = _configService.UpdateSettings(config =>
+        {
+            // Validate DefaultLanguageAlternativeId inside the lock to prevent race conditions
+            // where another thread could delete the alternative between validation and update
+            if (settings.DefaultLanguageAlternativeIdProvided && settings.DefaultLanguageAlternativeId.HasValue)
             {
-                // Validate if not null
-                if (request.Settings.DefaultLanguageAlternativeId.HasValue)
+                var altExists = config.LanguageAlternatives.Any(a => a.Id == settings.DefaultLanguageAlternativeId.Value);
+                if (!altExists)
                 {
-                    var altExists = config.LanguageAlternatives.Any(a => a.Id == request.Settings.DefaultLanguageAlternativeId.Value);
-                    if (!altExists)
-                    {
-                        return BadRequest("Invalid DefaultLanguageAlternativeId: language alternative not found");
-                    }
+                    validationError = "Invalid DefaultLanguageAlternativeId: language alternative not found";
+                    return false; // Abort without saving
                 }
-
-                config.DefaultLanguageAlternativeId = request.Settings.DefaultLanguageAlternativeId;
             }
 
-            if (request.Settings.SyncMirrorsAfterLibraryScan.HasValue)
+            if (settings.AutoManageNewUsers.HasValue)
             {
-                config.SyncMirrorsAfterLibraryScan = request.Settings.SyncMirrorsAfterLibraryScan.Value;
+                config.AutoManageNewUsers = settings.AutoManageNewUsers.Value;
             }
 
-            if (request.Settings.ExcludedExtensions != null)
+            if (settings.DefaultLanguageAlternativeIdProvided)
             {
-                config.ExcludedExtensions = new HashSet<string>(request.Settings.ExcludedExtensions, StringComparer.OrdinalIgnoreCase);
+                config.DefaultLanguageAlternativeId = settings.DefaultLanguageAlternativeId;
             }
 
-            if (request.Settings.ExcludedDirectories != null)
+            if (settings.SyncMirrorsAfterLibraryScan.HasValue)
             {
-                config.ExcludedDirectories = new HashSet<string>(request.Settings.ExcludedDirectories, StringComparer.OrdinalIgnoreCase);
+                config.SyncMirrorsAfterLibraryScan = settings.SyncMirrorsAfterLibraryScan.Value;
             }
 
-            if (request.Settings.EnableLdapIntegration.HasValue)
+            if (settings.ExcludedExtensions != null)
             {
-                config.EnableLdapIntegration = request.Settings.EnableLdapIntegration.Value;
+                config.ExcludedExtensions = new HashSet<string>(settings.ExcludedExtensions, StringComparer.OrdinalIgnoreCase);
             }
+
+            if (settings.ExcludedDirectories != null)
+            {
+                config.ExcludedDirectories = new HashSet<string>(settings.ExcludedDirectories, StringComparer.OrdinalIgnoreCase);
+            }
+
+            if (settings.EnableLdapIntegration.HasValue)
+            {
+                config.EnableLdapIntegration = settings.EnableLdapIntegration.Value;
+            }
+
+            if (settings.FallbackOnLdapFailure.HasValue)
+            {
+                config.FallbackOnLdapFailure = settings.FallbackOnLdapFailure.Value;
+            }
+
+            return true; // Save changes
+        });
+
+        // Handle all failure cases:
+        // 1. Validation failed (validationError is set)
+        // 2. Config was null (UpdateSettings returned false, validationError is null)
+        if (!saved)
+        {
+            if (validationError != null)
+            {
+                return BadRequest(validationError);
+            }
+
+            // Config was null - this shouldn't happen in normal operation
+            _logger.PolyglotError("UpdateUIConfig: Failed to update settings - configuration unavailable");
+            return StatusCode(StatusCodes.Status500InternalServerError, "Plugin configuration is unavailable");
         }
 
-        // Save configuration
-        Plugin.Instance?.SaveConfiguration();
-
-        _logger.PolyglotInfo("Plugin settings updated via UIConfig endpoint");
-
-        // Return full UI config
+        _logger.PolyglotInfo("UpdateUIConfig: Plugin settings updated");
         return GetUIConfig();
     }
 
@@ -236,8 +267,8 @@ public class PolyglotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<IEnumerable<LanguageAlternative>> GetAlternatives()
     {
-        var config = Plugin.Instance?.Configuration;
-        return Ok(config?.LanguageAlternatives ?? new List<LanguageAlternative>());
+        var alternatives = _configService.GetAlternatives();
+        return Ok(alternatives);
     }
 
     /// <summary>
@@ -248,11 +279,7 @@ public class PolyglotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult<LanguageAlternative> CreateAlternative([FromBody] CreateAlternativeRequest request)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return StatusCode(StatusCodes.Status500InternalServerError, "Plugin not configured");
-        }
+        _logger.PolyglotDebug("CreateAlternative: Creating new alternative '{0}'", request.Name);
 
         if (string.IsNullOrWhiteSpace(request.Name))
         {
@@ -269,16 +296,9 @@ public class PolyglotController : ControllerBase
             return BadRequest("Destination base path is required");
         }
 
-        // Validate destination base path - must be absolute path
         if (!Path.IsPathRooted(request.DestinationBasePath))
         {
             return BadRequest("Destination base path must be an absolute path");
-        }
-
-        // Check for duplicate name
-        if (config.LanguageAlternatives.Any(a => string.Equals(a.Name, request.Name, StringComparison.OrdinalIgnoreCase)))
-        {
-            return BadRequest($"A language alternative with the name '{request.Name}' already exists");
         }
 
         var alternative = new LanguageAlternative
@@ -292,10 +312,13 @@ public class PolyglotController : ControllerBase
             CreatedAt = DateTime.UtcNow
         };
 
-        config.LanguageAlternatives.Add(alternative);
-        Plugin.Instance?.SaveConfiguration();
+        // AddAlternative performs atomic duplicate name check inside the lock
+        if (!_configService.AddAlternative(alternative))
+        {
+            return BadRequest($"Failed to create alternative: either configuration is unavailable or a language alternative with the name '{request.Name}' already exists");
+        }
 
-        _logger.PolyglotInfo("Created language alternative: {0} ({1})", alternative.Name, alternative.LanguageCode);
+        _logger.PolyglotInfo("CreateAlternative: Created alternative {0} ({1})", alternative.Name, alternative.LanguageCode);
 
         return CreatedAtAction(nameof(GetAlternatives), new { id = alternative.Id }, alternative);
     }
@@ -306,83 +329,142 @@ public class PolyglotController : ControllerBase
     [HttpDelete("Alternatives/{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DeleteAlternative(
         Guid id,
         [FromQuery] bool deleteLibraries = false,
         [FromQuery] bool deleteFiles = false,
         CancellationToken cancellationToken = default)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return NotFound();
-        }
+        _logger.PolyglotDebug("DeleteAlternative: Deleting alternative {0}", id);
 
-        var alternative = config.LanguageAlternatives.FirstOrDefault(a => a.Id == id);
+        var alternative = _configService.GetAlternative(id);
         if (alternative == null)
         {
             return NotFound();
         }
 
-        // Delete mirrors
-        foreach (var mirror in alternative.MirroredLibraries.ToList())
+        // Get mirror info before deletion - capture both IDs and names for better error reporting
+        var mirrorInfo = alternative.MirroredLibraries
+            .Select(m => new { m.Id, m.TargetLibraryName })
+            .ToList();
+        var initialMirrorIds = mirrorInfo.Select(m => m.Id).ToHashSet();
+
+        // Track both successes and failures for accurate reporting
+        // On partial failure, we need to tell users exactly what was deleted and what remains
+        var deletedMirrors = new List<(Guid Id, string Name)>();
+        var failedMirrors = new List<(Guid Id, string Name, string Error)>();
+
+        // Delete mirrors using IDs - DeleteMirrorAsync handles config removal on success
+        foreach (var mirror in mirrorInfo)
         {
             try
             {
-                await _mirrorService.DeleteMirrorAsync(mirror, deleteLibraries, deleteFiles, cancellationToken);
+                var deleteResult = await _mirrorService.DeleteMirrorAsync(mirror.Id, deleteLibraries, deleteFiles, forceConfigRemoval: false, cancellationToken);
+                if (deleteResult.RemovedFromConfig)
+                {
+                    deletedMirrors.Add((mirror.Id, mirror.TargetLibraryName));
+                }
+                else
+                {
+                    // This shouldn't happen with forceConfigRemoval=false (it throws instead)
+                    failedMirrors.Add((mirror.Id, mirror.TargetLibraryName, "Mirror was not removed from configuration"));
+                }
             }
             catch (Exception ex)
             {
-                _logger.PolyglotError(ex, "Failed to delete mirror {0}", mirror.Id);
+                _logger.PolyglotError(ex, "DeleteAlternative: Failed to delete mirror {0} ({1})", mirror.Id, mirror.TargetLibraryName);
+                failedMirrors.Add((mirror.Id, mirror.TargetLibraryName, ex.Message));
             }
         }
 
-        config.LanguageAlternatives.Remove(alternative);
-        Plugin.Instance?.SaveConfiguration();
+        // Only remove the alternative if all mirrors were deleted successfully
+        if (failedMirrors.Count > 0)
+        {
+            _logger.PolyglotWarning(
+                "DeleteAlternative: {0} of {1} mirrors failed to delete, keeping alternative {2} in config",
+                failedMirrors.Count, mirrorInfo.Count, id);
 
-        _logger.PolyglotInfo("Deleted language alternative: {0}", alternative.Name);
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new
+                {
+                    Error = $"Failed to delete {failedMirrors.Count} of {mirrorInfo.Count} mirrors. " +
+                            $"{deletedMirrors.Count} mirror(s) were already deleted successfully. " +
+                            "The alternative remains in configuration with only the failed mirrors. " +
+                            "Retry to delete the remaining mirrors, or manually clean up.",
+                    DeletedMirrors = deletedMirrors.Select(m => new { m.Id, m.Name }),
+                    FailedMirrors = failedMirrors.Select(m => new { m.Id, m.Name, m.Error })
+                });
+        }
+
+        // Atomically check for new mirrors and remove the alternative
+        // This prevents race conditions where AddLibraryMirror could add a mirror
+        // between a non-atomic check and remove, leaving orphaned resources
+        var removeResult = _configService.TryRemoveAlternativeAtomic(id, initialMirrorIds);
+
+        if (!removeResult.Success)
+        {
+            switch (removeResult.FailureReason)
+            {
+                case RemoveAlternativeFailureReason.NewMirrorsAdded:
+                    _logger.PolyglotWarning(
+                        "DeleteAlternative: {0} new mirrors were added during deletion of alternative {1}. Aborting to prevent orphaned resources.",
+                        removeResult.UnexpectedMirrorIds.Count, id);
+                    return Conflict(new
+                    {
+                        Error = $"Cannot delete alternative: {removeResult.UnexpectedMirrorIds.Count} new mirror(s) were added during deletion. Please retry the operation.",
+                        NewMirrorIds = removeResult.UnexpectedMirrorIds
+                    });
+
+                case RemoveAlternativeFailureReason.AlternativeNotFound:
+                    // Alternative was already deleted (possibly by concurrent request) - that's fine
+                    _logger.PolyglotDebug("DeleteAlternative: Alternative {0} was already removed", id);
+                    break;
+
+                case RemoveAlternativeFailureReason.ConfigurationUnavailable:
+                    return StatusCode(StatusCodes.Status500InternalServerError, "Plugin configuration is unavailable");
+            }
+        }
+
+        _logger.PolyglotInfo("DeleteAlternative: Deleted alternative {0}", id);
 
         return NoContent();
     }
 
     /// <summary>
     /// Adds a library mirror to a language alternative.
-    /// Mirror creation happens in the background - check the mirror status for progress.
+    /// This is a synchronous operation that waits for completion.
     /// </summary>
     [HttpPost("Alternatives/{id:guid}/Libraries")]
-    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult<LibraryMirror> AddLibraryMirror(
+    public async Task<ActionResult<LibraryMirror>> AddLibraryMirror(
         Guid id,
-        [FromBody] AddLibraryMirrorRequest request)
+        [FromBody] AddLibraryMirrorRequest request,
+        CancellationToken cancellationToken = default)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return StatusCode(StatusCodes.Status500InternalServerError, "Plugin not configured");
-        }
+        _logger.PolyglotDebug("AddLibraryMirror: Adding mirror to alternative {0}", id);
 
-        var alternative = config.LanguageAlternatives.FirstOrDefault(a => a.Id == id);
+        var alternative = _configService.GetAlternative(id);
         if (alternative == null)
         {
             return NotFound("Language alternative not found");
         }
 
-        // Parse source library ID (accepts both formats: with and without dashes)
         if (!Guid.TryParse(request.SourceLibraryId, out var sourceLibraryId))
         {
             return BadRequest("Invalid source library ID format");
         }
 
-        // Validate mirror configuration
         var validation = _mirrorService.ValidateMirrorConfiguration(sourceLibraryId, request.TargetPath);
         if (!validation.IsValid)
         {
             return BadRequest(validation.ErrorMessage);
         }
 
-        // Get source library info
         var sourceLibrary = _mirrorService.GetJellyfinLibraries()
             .FirstOrDefault(l => l.Id == sourceLibraryId);
 
@@ -391,17 +473,13 @@ public class PolyglotController : ControllerBase
             return BadRequest("Source library not found");
         }
 
-        // Prevent mirroring a mirror library
         if (sourceLibrary.IsMirror)
         {
             return BadRequest("Cannot create a mirror of a mirror library. Please select a source library.");
         }
 
-        // Check if this alternative already has a mirror for this source library
-        if (alternative.MirroredLibraries.Any(m => m.SourceLibraryId == sourceLibraryId))
-        {
-            return BadRequest($"This language alternative already has a mirror for '{sourceLibrary.Name}'. Each source library can only be mirrored once per language.");
-        }
+        // Note: We don't re-fetch alternative here - the atomic duplicate check in AddMirror
+        // handles race conditions. This avoids the TOCTOU bug where the check and add aren't atomic.
 
         var mirror = new LibraryMirror
         {
@@ -414,82 +492,152 @@ public class PolyglotController : ControllerBase
             Status = SyncStatus.Pending
         };
 
-        alternative.MirroredLibraries.Add(mirror);
-        Plugin.Instance?.SaveConfiguration();
-
-        _logger.PolyglotInfo("Queued mirror creation for {0} -> {1}",
-            sourceLibrary.Name, mirror.TargetLibraryName);
-
-        // Create the mirror in the background
-        _ = Task.Run(async () =>
+        // Add mirror to config atomically (includes duplicate source library check)
+        if (!_configService.AddMirror(id, mirror))
         {
-            try
+            return BadRequest($"Failed to add mirror: either the language alternative was deleted or a mirror for '{sourceLibrary.Name}' was created by another request");
+        }
+
+        _logger.PolyglotInfo("AddLibraryMirror: Creating mirror {0} for {1}", mirror.Id, sourceLibrary.Name);
+
+        try
+        {
+            // Create mirror synchronously - no more Task.Run
+            await _mirrorService.CreateMirrorAsync(id, mirror.Id, cancellationToken);
+
+            // Update library access for users assigned to this language alternative
+            var userLanguages = _configService.GetUserLanguages();
+            var usersWithThisLanguage = userLanguages
+                .Where(u => u.SelectedAlternativeId == id && u.IsPluginManaged)
+                .Select(u => u.UserId)
+                .ToList();
+
+            foreach (var userId in usersWithThisLanguage)
             {
-                await _mirrorService.CreateMirrorAsync(alternative, mirror, CancellationToken.None);
-
-                // Update library access for all users assigned to this language alternative
-                var currentConfig = Plugin.Instance?.Configuration;
-                if (currentConfig != null)
+                try
                 {
-                    var usersWithThisLanguage = currentConfig.UserLanguages
-                        .Where(u => u.SelectedAlternativeId == alternative.Id && u.IsPluginManaged)
-                        .Select(u => u.UserId)
-                        .ToList();
-
-                    foreach (var userId in usersWithThisLanguage)
-                    {
-                        await _libraryAccessService.UpdateUserLibraryAccessAsync(userId, CancellationToken.None)
-                            .ConfigureAwait(false);
-                    }
-
-                    _logger.PolyglotInfo("Updated library access for {0} users after creating mirror {1}",
-                        usersWithThisLanguage.Count, mirror.TargetLibraryName);
+                    await _libraryAccessService.UpdateUserLibraryAccessAsync(userId, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.PolyglotWarning(ex, "AddLibraryMirror: Failed to update access for user {0}", userId);
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.PolyglotError(ex, "Background mirror creation failed for {0}", sourceLibrary.Name);
-            }
-        });
 
-        return Accepted(mirror);
+            _logger.PolyglotInfo("AddLibraryMirror: Completed mirror creation, updated access for {0} users", usersWithThisLanguage.Count);
+
+            // Return fresh mirror data with 201 Created
+            // Always fetch from config service to ensure complete data (including TargetLibraryId set by CreateMirrorAsync)
+            var updatedMirror = _configService.GetMirror(mirror.Id);
+            if (updatedMirror == null)
+            {
+                // This should not happen in normal operation, but handle defensively
+                _logger.PolyglotError("AddLibraryMirror: Mirror {0} not found after creation - configuration may be corrupted", mirror.Id);
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new { Error = "Mirror was created but could not be retrieved from configuration. Please check the configuration." });
+            }
+
+            // Use sourceLibraryId in the URI to match the DELETE endpoint route parameter
+            var resourceUri = $"Alternatives/{id}/Libraries/{sourceLibraryId}";
+            return Created(resourceUri, updatedMirror);
+        }
+        catch (Exception ex)
+        {
+            _logger.PolyglotError(ex, "AddLibraryMirror: Failed to create mirror {0}", mirror.Id);
+
+            // Clean up the orphaned config entry to prevent accumulation of failed mirrors
+            // that users would otherwise need to manually remove.
+            // Wrap in try-catch to ensure we always return the error response to the client,
+            // even if cleanup fails (e.g., I/O error during SaveConfiguration).
+            try
+            {
+                _configService.RemoveMirror(mirror.Id);
+                _logger.PolyglotInfo("AddLibraryMirror: Removed failed mirror {0} from configuration", mirror.Id);
+            }
+            catch (Exception cleanupEx)
+            {
+                _logger.PolyglotWarning(cleanupEx,
+                    "AddLibraryMirror: Failed to clean up config entry for mirror {0}. Manual cleanup may be required.",
+                    mirror.Id);
+            }
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new { Error = ex.Message });
+        }
     }
 
     /// <summary>
     /// Triggers sync for all mirrors in a language alternative.
+    /// This is a synchronous operation that waits for completion.
     /// </summary>
     [HttpPost("Alternatives/{id:guid}/Sync")]
-    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> SyncAlternative(Guid id, CancellationToken cancellationToken = default)
     {
-        var config = Plugin.Instance?.Configuration;
-        var alternative = config?.LanguageAlternatives.FirstOrDefault(a => a.Id == id);
+        _logger.PolyglotDebug("SyncAlternative: Starting sync for alternative {0}", id);
 
+        var alternative = _configService.GetAlternative(id);
         if (alternative == null)
         {
             return NotFound();
         }
 
-        // Start sync in background
-        _ = Task.Run(async () =>
+        try
         {
-            try
-            {
-                await _mirrorService.SyncAllMirrorsAsync(alternative, null, CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                _logger.PolyglotError(ex, "Background sync failed for alternative {0}", alternative.Name);
-            }
-        }, cancellationToken);
+            var result = await _mirrorService.SyncAllMirrorsAsync(id, null, cancellationToken);
 
-        return Accepted();
+            _logger.PolyglotInfo("SyncAlternative: Completed sync for alternative {0} - status: {1}", id, result.Status);
+
+            if (result.Status == SyncAllStatus.AlternativeNotFound)
+            {
+                return NotFound("Language alternative was deleted during sync");
+            }
+
+            if (result.Status == SyncAllStatus.CompletedWithErrors)
+            {
+                return Ok(new
+                {
+                    Message = "Sync completed with some errors",
+                    MirrorsSynced = result.MirrorsSynced,
+                    MirrorsFailed = result.MirrorsFailed,
+                    TotalMirrors = result.TotalMirrors
+                });
+            }
+
+            if (result.Status == SyncAllStatus.Cancelled)
+            {
+                return Ok(new
+                {
+                    Message = "Sync was cancelled",
+                    MirrorsSynced = result.MirrorsSynced,
+                    TotalMirrors = result.TotalMirrors
+                });
+            }
+
+            // SyncAllStatus.Completed or any other status
+            return Ok(new
+            {
+                Message = "Sync completed successfully",
+                MirrorsSynced = result.MirrorsSynced,
+                TotalMirrors = result.TotalMirrors
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.PolyglotError(ex, "SyncAlternative: Sync failed for alternative {0}", id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { Error = ex.Message });
+        }
     }
 
     /// <summary>
     /// Deletes a library mirror from a language alternative.
     /// </summary>
+    /// <param name="id">The language alternative ID.</param>
+    /// <param name="sourceLibraryId">The source library ID of the mirror to delete.</param>
+    /// <param name="deleteLibrary">Whether to delete the Jellyfin library.</param>
+    /// <param name="deleteFiles">Whether to delete the mirror files.</param>
+    /// <param name="force">Force removal from config even if library/file deletion fails.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     [HttpDelete("Alternatives/{id:guid}/Libraries/{sourceLibraryId:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -498,15 +646,12 @@ public class PolyglotController : ControllerBase
         Guid sourceLibraryId,
         [FromQuery] bool deleteLibrary = false,
         [FromQuery] bool deleteFiles = false,
+        [FromQuery] bool force = false,
         CancellationToken cancellationToken = default)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return NotFound();
-        }
+        _logger.PolyglotDebug("DeleteLibraryMirror: Deleting mirror for source {0} from alternative {1} (force: {2})", sourceLibraryId, id, force);
 
-        var alternative = config.LanguageAlternatives.FirstOrDefault(a => a.Id == id);
+        var alternative = _configService.GetAlternative(id);
         if (alternative == null)
         {
             return NotFound("Language alternative not found");
@@ -518,43 +663,47 @@ public class PolyglotController : ControllerBase
             return NotFound("Mirror not found");
         }
 
+        var mirrorId = mirror.Id;
+        var mirrorName = mirror.TargetLibraryName;
+
+        DeleteMirrorResult deleteResult;
         try
         {
-            await _mirrorService.DeleteMirrorAsync(mirror, deleteLibrary, deleteFiles, cancellationToken);
+            deleteResult = await _mirrorService.DeleteMirrorAsync(mirrorId, deleteLibrary, deleteFiles, forceConfigRemoval: force, cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.PolyglotError(ex, "Failed to delete mirror {0}", mirror.Id);
-            return BadRequest($"Failed to delete mirror: {ex.Message}");
+            _logger.PolyglotError(ex, "DeleteLibraryMirror: Failed to delete mirror {0}", mirrorId);
+            return BadRequest($"Failed to delete mirror: {ex.Message}. Use force=true to remove from config anyway.");
         }
 
-        alternative.MirroredLibraries.Remove(mirror);
-        Plugin.Instance?.SaveConfiguration();
+        // If force was used and there were errors, return them as warnings
+        if (deleteResult.HasErrors)
+        {
+            _logger.PolyglotWarning("DeleteLibraryMirror: Mirror {0} removed with errors: {1} {2}",
+                mirrorId, deleteResult.LibraryDeletionError, deleteResult.FileDeletionError);
+        }
 
         // Update library access for users assigned to this language alternative
-        try
-        {
-            var usersWithThisLanguage = config.UserLanguages
-                .Where(u => u.SelectedAlternativeId == alternative.Id && u.IsPluginManaged)
-                .Select(u => u.UserId)
-                .ToList();
+        var userLanguages = _configService.GetUserLanguages();
+        var usersWithThisLanguage = userLanguages
+            .Where(u => u.SelectedAlternativeId == id && u.IsPluginManaged)
+            .Select(u => u.UserId)
+            .ToList();
 
-            foreach (var userId in usersWithThisLanguage)
+        foreach (var userId in usersWithThisLanguage)
+        {
+            try
             {
-                await _libraryAccessService.UpdateUserLibraryAccessAsync(userId, cancellationToken)
-                    .ConfigureAwait(false);
+                await _libraryAccessService.UpdateUserLibraryAccessAsync(userId, cancellationToken);
             }
-
-            _logger.PolyglotInfo("Updated library access for {0} users after deleting mirror {1}",
-                usersWithThisLanguage.Count, mirror.TargetLibraryName);
-        }
-        catch (Exception ex)
-        {
-            _logger.PolyglotError(ex, "Failed to update user library access after deleting mirror");
+            catch (Exception ex)
+            {
+                _logger.PolyglotWarning(ex, "DeleteLibraryMirror: Failed to update access for user {0}", userId);
+            }
         }
 
-        _logger.PolyglotInfo("Deleted mirror: {0} from alternative {1}", 
-            mirror.TargetLibraryName, alternative.Name);
+        _logger.PolyglotInfo("DeleteLibraryMirror: Deleted mirror {0}, updated access for {1} users", mirrorName, usersWithThisLanguage.Count);
 
         return NoContent();
     }
@@ -588,7 +737,6 @@ public class PolyglotController : ControllerBase
     {
         try
         {
-            // Handle "disabled" option - user is not managed by plugin
             if (request.IsDisabled)
             {
                 await _libraryAccessService.DisableUserAsync(userId, restoreFullAccess: false, cancellationToken);
@@ -600,27 +748,23 @@ public class PolyglotController : ControllerBase
                 request.AlternativeId,
                 "admin",
                 manuallySet: request.ManuallySet,
-                isPluginManaged: true, // Enable plugin management
+                isPluginManaged: true,
                 cancellationToken);
 
             return NoContent();
         }
         catch (ArgumentException ex)
         {
-            // Distinguish between user not found (404) and invalid alternative ID (400)
-            // User ID is in the URL path - if not found, it's a 404
-            // Alternative ID is in the request body - if invalid, it's a 400
             if (ex.ParamName == "userId")
             {
                 return NotFound(ex.Message);
             }
 
-            // Invalid alternative ID or other argument errors are bad requests
             return BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
-            _logger.PolyglotError(ex, "Failed to set language for user {0}", userId);
+            _logger.PolyglotError(ex, "SetUserLanguage: Failed for user {0}", userId);
             return BadRequest(ex.Message);
         }
     }
@@ -673,8 +817,8 @@ public class PolyglotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<IEnumerable<LdapGroupMapping>> GetLdapGroups()
     {
-        var config = Plugin.Instance?.Configuration;
-        return Ok(config?.LdapGroupMappings ?? new List<LdapGroupMapping>());
+        var mappings = _configService.GetLdapGroupMappings();
+        return Ok(mappings);
     }
 
     /// <summary>
@@ -685,19 +829,14 @@ public class PolyglotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public ActionResult<LdapGroupMapping> AddLdapGroupMapping([FromBody] AddLdapGroupMappingRequest request)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return StatusCode(StatusCodes.Status500InternalServerError, "Plugin not configured");
-        }
+        _logger.PolyglotDebug("AddLdapGroupMapping: Adding mapping for {0}", request.LdapGroupDn);
 
         if (string.IsNullOrWhiteSpace(request.LdapGroupDn))
         {
             return BadRequest("LDAP group DN is required");
         }
 
-        // Verify language alternative exists
-        var alternative = config.LanguageAlternatives.FirstOrDefault(a => a.Id == request.LanguageAlternativeId);
+        var alternative = _configService.GetAlternative(request.LanguageAlternativeId);
         if (alternative == null)
         {
             return BadRequest("Language alternative not found");
@@ -712,10 +851,13 @@ public class PolyglotController : ControllerBase
             Priority = request.Priority
         };
 
-        config.LdapGroupMappings.Add(mapping);
-        Plugin.Instance?.SaveConfiguration();
+        // AddLdapGroupMapping performs atomic duplicate check inside the lock
+        if (!_configService.AddLdapGroupMapping(mapping))
+        {
+            return BadRequest($"Failed to add LDAP mapping: either configuration is unavailable or a mapping for '{request.LdapGroupDn}' already exists");
+        }
 
-        _logger.PolyglotInfo("Added LDAP group mapping: {0} -> {1}", mapping.LdapGroupDn, alternative.Name);
+        _logger.PolyglotInfo("AddLdapGroupMapping: Added mapping {0} -> {1}", mapping.LdapGroupDn, alternative.Name);
 
         return CreatedAtAction(nameof(GetLdapGroups), null, mapping);
     }
@@ -728,22 +870,14 @@ public class PolyglotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult DeleteLdapGroupMapping(Guid id)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
+        _logger.PolyglotDebug("DeleteLdapGroupMapping: Deleting mapping {0}", id);
+
+        if (!_configService.RemoveLdapGroupMapping(id))
         {
             return NotFound();
         }
 
-        var mapping = config.LdapGroupMappings.FirstOrDefault(m => m.Id == id);
-        if (mapping == null)
-        {
-            return NotFound();
-        }
-
-        config.LdapGroupMappings.Remove(mapping);
-        Plugin.Instance?.SaveConfiguration();
-
-        _logger.PolyglotInfo("Deleted LDAP group mapping: {0}", mapping.LdapGroupDn);
+        _logger.PolyglotInfo("DeleteLdapGroupMapping: Deleted mapping {0}", id);
 
         return NoContent();
     }
@@ -776,7 +910,7 @@ public class PolyglotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<PluginSettings> GetSettings()
     {
-        var config = Plugin.Instance?.Configuration;
+        var config = _configService.GetConfiguration();
         if (config == null)
         {
             return NotFound();
@@ -795,15 +929,14 @@ public class PolyglotController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public IActionResult UpdateSettings([FromBody] PluginSettings settings)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
+        _logger.PolyglotDebug("UpdateSettings: Updating LDAP integration to {0}", settings.EnableLdapIntegration);
+
+        _configService.UpdateSettings(config =>
         {
-            return NotFound();
-        }
+            config.EnableLdapIntegration = settings.EnableLdapIntegration;
+        });
 
-        config.EnableLdapIntegration = settings.EnableLdapIntegration;
-
-        Plugin.Instance?.SaveConfiguration();
+        _logger.PolyglotInfo("UpdateSettings: Settings updated");
 
         return NoContent();
     }
@@ -1116,6 +1249,13 @@ public class UISettingsResponse
     public bool EnableLdapIntegration { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether to fall back to auto-assignment when LDAP lookup fails.
+    /// When true (default), users are assigned the default language if LDAP lookup fails.
+    /// When false, users remain unassigned if LDAP lookup fails, requiring manual assignment.
+    /// </summary>
+    public bool FallbackOnLdapFailure { get; set; }
+
+    /// <summary>
     /// Gets or sets the LDAP group mappings.
     /// </summary>
     public List<LdapGroupMapping> LdapGroupMappings { get; set; } = new();
@@ -1173,6 +1313,13 @@ public class UISettingsUpdateRequest
     /// Gets or sets whether LDAP integration is enabled.
     /// </summary>
     public bool? EnableLdapIntegration { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether to fall back to auto-assignment when LDAP lookup fails.
+    /// When true (default), users are assigned the default language if LDAP lookup fails.
+    /// When false, users remain unassigned if LDAP lookup fails, requiring manual assignment.
+    /// </summary>
+    public bool? FallbackOnLdapFailure { get; set; }
 }
 
 /// <summary>
@@ -1244,5 +1391,3 @@ public class ServerConfigInfo
 }
 
 #endregion
-
-

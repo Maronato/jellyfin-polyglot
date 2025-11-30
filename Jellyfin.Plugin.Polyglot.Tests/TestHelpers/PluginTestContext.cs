@@ -38,6 +38,11 @@ public class PluginTestContext : IDisposable
     public Mock<IMirrorService> MirrorServiceMock { get; }
 
     /// <summary>
+    /// Gets the mock configuration service resolved via the application host.
+    /// </summary>
+    public Mock<IConfigurationService> ConfigurationServiceMock { get; }
+
+    /// <summary>
     /// Gets the mock logger used when constructing the plugin.
     /// </summary>
     public Mock<ILogger<Plugin>> PluginLoggerMock { get; }
@@ -61,19 +66,30 @@ public class PluginTestContext : IDisposable
         applicationPathsMock.Setup(p => p.PluginsPath).Returns(_tempConfigPath);
         applicationPathsMock.Setup(p => p.DataPath).Returns(_tempConfigPath);
 
+        // Create the shared configuration that both plugin and mock will use
+        var sharedConfig = new PluginConfiguration();
+        
         var xmlSerializerMock = new Mock<IXmlSerializer>();
         xmlSerializerMock.Setup(s => s.DeserializeFromFile(It.IsAny<Type>(), It.IsAny<string>()))
-            .Returns(new PluginConfiguration());
+            .Returns(sharedConfig);
         xmlSerializerMock.Setup(s => s.SerializeToFile(It.IsAny<object>(), It.IsAny<string>()));
 
         // Set up application host with service resolution
         ApplicationHostMock = new Mock<IApplicationHost>();
         MirrorServiceMock = new Mock<IMirrorService>();
         
+        // Create ConfigurationService mock that delegates to the shared config
+        ConfigurationServiceMock = MockFactory.CreateConfigurationService(sharedConfig);
+        
         // Wire up Resolve<IMirrorService>() to return our mock
         ApplicationHostMock
             .Setup(h => h.Resolve<IMirrorService>())
             .Returns(MirrorServiceMock.Object);
+        
+        // Wire up Resolve<IConfigurationService>() to return our mock
+        ApplicationHostMock
+            .Setup(h => h.Resolve<IConfigurationService>())
+            .Returns(ConfigurationServiceMock.Object);
 
         PluginLoggerMock = new Mock<ILogger<Plugin>>();
 

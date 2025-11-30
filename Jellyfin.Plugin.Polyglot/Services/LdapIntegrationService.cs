@@ -13,12 +13,14 @@ namespace Jellyfin.Plugin.Polyglot.Services;
 
 /// <summary>
 /// Service for LDAP integration to determine user language from group membership.
+/// Uses IConfigurationService for plugin config access.
 /// </summary>
 public class LdapIntegrationService : ILdapIntegrationService
 {
     private const string LdapPluginId = "958aad66-3784-4f94-b0db-ff87df5c155e";
 
     private readonly IPluginManager _pluginManager;
+    private readonly IConfigurationService _configService;
     private readonly ILogger<LdapIntegrationService> _logger;
 
     // Cached LDAP configuration (read from LDAP plugin)
@@ -29,9 +31,13 @@ public class LdapIntegrationService : ILdapIntegrationService
     /// <summary>
     /// Initializes a new instance of the <see cref="LdapIntegrationService"/> class.
     /// </summary>
-    public LdapIntegrationService(IPluginManager pluginManager, ILogger<LdapIntegrationService> logger)
+    public LdapIntegrationService(
+        IPluginManager pluginManager,
+        IConfigurationService configService,
+        ILogger<LdapIntegrationService> logger)
     {
         _pluginManager = pluginManager;
+        _configService = configService;
         _logger = logger;
     }
 
@@ -66,7 +72,7 @@ public class LdapIntegrationService : ILdapIntegrationService
                 status.ServerAddress = config?.LdapServer;
             }
 
-            var pluginConfig = Plugin.Instance?.Configuration;
+            var pluginConfig = _configService.GetConfiguration();
             status.IsIntegrationEnabled = pluginConfig?.EnableLdapIntegration ?? false;
         }
         catch (Exception ex)
@@ -109,8 +115,14 @@ public class LdapIntegrationService : ILdapIntegrationService
     /// <inheritdoc />
     public async Task<Guid?> DetermineLanguageFromGroupsAsync(string username, CancellationToken cancellationToken = default)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null || !config.EnableLdapIntegration || config.LdapGroupMappings.Count == 0)
+        var config = _configService.GetConfiguration();
+        if (config == null || !config.EnableLdapIntegration)
+        {
+            return null;
+        }
+
+        var ldapMappings = _configService.GetLdapGroupMappings();
+        if (ldapMappings.Count == 0)
         {
             return null;
         }
@@ -125,7 +137,7 @@ public class LdapIntegrationService : ILdapIntegrationService
 
         // Find matching mappings ordered by priority (highest first)
         // For equal priorities, preserve original mapping order (first in list wins)
-        var matchingMappings = config.LdapGroupMappings
+        var matchingMappings = ldapMappings
             .Select((mapping, index) => new { Mapping = mapping, Index = index })
             .Where(x => groupSet.Contains(x.Mapping.LdapGroupDn) || groupSet.Contains(x.Mapping.LdapGroupName))
             .OrderByDescending(x => x.Mapping.Priority)
@@ -169,22 +181,27 @@ public class LdapIntegrationService : ILdapIntegrationService
                 return result;
             }
 
-            // Test connection
-            using var connection = new LdapConnection();
             var port = ldapConfig.LdapPort > 0 ? ldapConfig.LdapPort : (ldapConfig.UseSsl ? 636 : 389);
 
-            connection.Connect(ldapConfig.LdapServer, port);
-
-            if (ldapConfig.UseSsl || ldapConfig.UseStartTls)
+            // Wrap blocking LDAP calls in Task.Run to prevent thread pool starvation
+            // This is consistent with QueryLdapGroupsAsync which also uses Task.Run
+            await Task.Run(() =>
             {
-                connection.StartTls();
-            }
+                using var connection = new LdapConnection();
 
-            // Bind with service account
-            if (!string.IsNullOrEmpty(ldapConfig.LdapBindUser))
-            {
-                connection.Bind(ldapConfig.LdapBindUser, ldapConfig.LdapBindPassword);
-            }
+                connection.Connect(ldapConfig.LdapServer, port);
+
+                if (ldapConfig.UseSsl || ldapConfig.UseStartTls)
+                {
+                    connection.StartTls();
+                }
+
+                // Bind with service account
+                if (!string.IsNullOrEmpty(ldapConfig.LdapBindUser))
+                {
+                    connection.Bind(ldapConfig.LdapBindUser, ldapConfig.LdapBindPassword);
+                }
+            }, cancellationToken).ConfigureAwait(false);
 
             result.Success = true;
             result.Message = $"Successfully connected to {ldapConfig.LdapServer}:{port}";
@@ -200,8 +217,7 @@ public class LdapIntegrationService : ILdapIntegrationService
                 var languageId = await DetermineLanguageFromGroupsAsync(testUsername, cancellationToken).ConfigureAwait(false);
                 if (languageId.HasValue)
                 {
-                    var config = Plugin.Instance?.Configuration;
-                    var alt = config?.LanguageAlternatives.FirstOrDefault(a => a.Id == languageId.Value);
+                    var alt = _configService.GetAlternative(languageId.Value);
                     result.MatchedLanguage = alt?.Name;
                     result.Message += $" - Matched language: {alt?.Name}";
                 }

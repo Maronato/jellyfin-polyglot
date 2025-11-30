@@ -13,11 +13,13 @@ namespace Jellyfin.Plugin.Polyglot.Services;
 
 /// <summary>
 /// Service for managing user library access based on language assignments.
+/// Uses IConfigurationService for all config access to prevent stale reference bugs.
 /// </summary>
 public class LibraryAccessService : ILibraryAccessService
 {
     private readonly IUserManager _userManager;
     private readonly ILibraryManager _libraryManager;
+    private readonly IConfigurationService _configService;
     private readonly ILogger<LibraryAccessService> _logger;
 
     /// <summary>
@@ -26,34 +28,32 @@ public class LibraryAccessService : ILibraryAccessService
     public LibraryAccessService(
         IUserManager userManager,
         ILibraryManager libraryManager,
+        IConfigurationService configService,
         ILogger<LibraryAccessService> logger)
     {
         _userManager = userManager;
         _libraryManager = libraryManager;
+        _configService = configService;
         _logger = logger;
     }
 
     /// <inheritdoc />
     public async Task UpdateUserLibraryAccessAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        _logger.PolyglotDebug("UpdateUserLibraryAccessAsync: Starting for user {0}", userId);
+
         var user = _userManager.GetUserById(userId);
         if (user == null)
         {
-            _logger.PolyglotWarning("User {0} not found", userId);
-            return;
-        }
-
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
+            _logger.PolyglotWarning("UpdateUserLibraryAccessAsync: User {0} not found", userId);
             return;
         }
 
         // Check if user is managed by the plugin
-        var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
+        var userConfig = _configService.GetUserLanguage(userId);
         if (userConfig == null || !userConfig.IsPluginManaged)
         {
-            _logger.PolyglotDebug("User {0} is not managed by plugin, skipping library access update", user.Username);
+            _logger.PolyglotDebug("UpdateUserLibraryAccessAsync: User {0} is not managed by plugin", user.Username);
             return;
         }
 
@@ -82,28 +82,27 @@ public class LibraryAccessService : ILibraryAccessService
         {
             if (!managedLibraries.Contains(libId))
             {
-                // This library is not managed by the plugin - preserve access
                 finalLibraries.Add(libId);
             }
         }
 
         // If no managed libraries exist yet, also preserve access to source libraries
-        // (This handles the case where plugin is enabled but no mirrors are configured yet)
         if (managedLibraries.Count == 0)
         {
             foreach (var libId in currentAccess)
             {
                 finalLibraries.Add(libId);
             }
+
             _logger.PolyglotInfo(
-                "User {0} - no mirrors configured yet, preserving current access to {1} libraries",
+                "UpdateUserLibraryAccessAsync: User {0} - no mirrors configured, preserving access to {1} libraries",
                 user.Username,
                 finalLibraries.Count);
         }
         else
         {
             _logger.PolyglotInfo(
-                "User {0} library access updated: {1} managed libraries, {2} unmanaged preserved",
+                "UpdateUserLibraryAccessAsync: User {0} - {1} managed libraries, {2} unmanaged preserved",
                 user.Username,
                 expectedManagedLibraries.Count,
                 finalLibraries.Count - expectedManagedLibraries.Count);
@@ -115,6 +114,8 @@ public class LibraryAccessService : ILibraryAccessService
         user.SetPreference(PreferenceKind.EnabledFolders, libraryIds);
 
         await _userManager.UpdateUserAsync(user).ConfigureAwait(false);
+
+        _logger.PolyglotDebug("UpdateUserLibraryAccessAsync: Completed for user {0}", userId);
     }
 
     /// <inheritdoc />
@@ -126,14 +127,8 @@ public class LibraryAccessService : ILibraryAccessService
             return false;
         }
 
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return false;
-        }
-
         // Check if user is managed by the plugin
-        var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
+        var userConfig = _configService.GetUserLanguage(userId);
         if (userConfig == null || !userConfig.IsPluginManaged)
         {
             return false;
@@ -153,7 +148,7 @@ public class LibraryAccessService : ILibraryAccessService
         }
 
         _logger.PolyglotInfo(
-            "Reconciling user {0} library access: expected {1}, current {2}, EnableAllFolders={3}",
+            "ReconcileUserAccessAsync: Reconciling user {0} - expected {1}, current {2}, EnableAllFolders={3}",
             user.Username,
             expectedLibraries.Count,
             currentLibraries.Count,
@@ -166,15 +161,12 @@ public class LibraryAccessService : ILibraryAccessService
     /// <inheritdoc />
     public async Task<int> ReconcileAllUsersAsync(CancellationToken cancellationToken = default)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return 0;
-        }
+        _logger.PolyglotDebug("ReconcileAllUsersAsync: Starting reconciliation");
 
+        var userLanguages = _configService.GetUserLanguages();
         var changedCount = 0;
 
-        foreach (var userLang in config.UserLanguages)
+        foreach (var userLang in userLanguages)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -187,27 +179,21 @@ public class LibraryAccessService : ILibraryAccessService
             }
             catch (Exception ex)
             {
-                _logger.PolyglotError(ex, "Failed to reconcile user {0}", userLang.UserId);
+                _logger.PolyglotError(ex, "ReconcileAllUsersAsync: Failed to reconcile user {0}", userLang.UserId);
             }
         }
 
+        _logger.PolyglotInfo("ReconcileAllUsersAsync: Reconciled {0} users", changedCount);
         return changedCount;
     }
 
     /// <inheritdoc />
     public IEnumerable<Guid> GetExpectedLibraryAccess(Guid userId)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            yield break;
-        }
-
         // Check if user has a language assigned
-        var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
+        var userConfig = _configService.GetUserLanguage(userId);
 
         // If user is not in config or not managed by plugin, return empty
-        // This means we won't modify their library access at all
         if (userConfig == null || !userConfig.IsPluginManaged)
         {
             yield break;
@@ -219,11 +205,20 @@ public class LibraryAccessService : ILibraryAccessService
         // Get all Jellyfin libraries
         var allLibraries = _libraryManager.GetVirtualFolders();
 
+        // Handle null library list
+        if (allLibraries == null)
+        {
+            yield break;
+        }
+
+        // Get alternatives fresh from config service
+        var alternatives = _configService.GetAlternatives();
+
         // Determine which alternative the user is assigned to (if any)
         LanguageAlternative? alternative = null;
-        if (userConfig?.SelectedAlternativeId.HasValue == true)
+        if (userConfig.SelectedAlternativeId.HasValue)
         {
-            alternative = config.LanguageAlternatives.FirstOrDefault(a => a.Id == userConfig.SelectedAlternativeId.Value);
+            alternative = alternatives.FirstOrDefault(a => a.Id == userConfig.SelectedAlternativeId.Value);
         }
 
         // Get mirrors for the user's language (or empty if default/no language)
@@ -239,20 +234,13 @@ public class LibraryAccessService : ILibraryAccessService
             .ToHashSet() ?? new HashSet<Guid>();
 
         // Get ALL mirror IDs across all alternatives (to exclude other languages' mirrors)
-        var allMirrorIds = config.LanguageAlternatives
+        var allMirrorIds = alternatives
             .SelectMany(a => a.MirroredLibraries)
             .Where(m => m.TargetLibraryId.HasValue)
             .Select(m => m.TargetLibraryId!.Value)
             .ToHashSet();
 
-        // Handle null library list
-        if (allLibraries == null)
-        {
-            yield break;
-        }
-
         // Build set of library IDs that actually exist in Jellyfin
-        // This is used to detect when a mirror was deleted from Jellyfin but config still references it
         var jellyfinLibraryIds = allLibraries
             .Select(lib => Guid.Parse(lib.ItemId))
             .ToHashSet();
@@ -264,12 +252,8 @@ public class LibraryAccessService : ILibraryAccessService
 
             if (!isManaged)
             {
-                // This library is NOT part of the Polyglot-managed system (like "Home Videos")
-                // We don't include it here - it will be handled separately to preserve user's existing access
                 continue;
             }
-
-            // This library IS managed by the plugin
 
             // Is this a mirror for the user's language?
             if (userMirrorIds.Contains(libraryId))
@@ -281,7 +265,6 @@ public class LibraryAccessService : ILibraryAccessService
             // Is this a mirror for a DIFFERENT language?
             if (allMirrorIds.Contains(libraryId))
             {
-                // Exclude mirrors for other languages
                 continue;
             }
 
@@ -289,52 +272,39 @@ public class LibraryAccessService : ILibraryAccessService
             if (userMirroredSourceIds.Contains(libraryId))
             {
                 // User has a mirror configured for this source
-                // But we should verify the mirror actually exists in Jellyfin
-                // If the mirror was deleted, fall back to showing the source
-                // "Better to have the movie with foreign metadata than no movie at all"
+                // Verify the mirror actually exists in Jellyfin
                 var mirrorExistsInJellyfin = alternative!.MirroredLibraries
                     .Where(m => m.SourceLibraryId == libraryId && m.TargetLibraryId.HasValue)
                     .Any(m => jellyfinLibraryIds.Contains(m.TargetLibraryId!.Value));
 
                 if (mirrorExistsInJellyfin)
                 {
-                    // Mirror exists, hide the source
                     continue;
                 }
 
-                // Mirror was deleted from Jellyfin - show the source as fallback
                 _logger.PolyglotWarning(
-                    "Mirror for source library {0} was deleted from Jellyfin. Showing source as fallback.",
+                    "GetExpectedLibraryAccess: Mirror for source {0} was deleted. Showing source as fallback.",
                     libraryId);
             }
 
-            // Source library without a mirror for this language (or mirror was deleted) - show it
             yield return libraryId;
         }
     }
 
     /// <summary>
     /// Gets all library IDs that are managed by the plugin (sources with mirrors + all mirrors).
-    /// Libraries not in this set should have their access preserved as-is.
     /// </summary>
     private HashSet<Guid> GetManagedLibraryIds()
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return new HashSet<Guid>();
-        }
-
         var managed = new HashSet<Guid>();
+        var alternatives = _configService.GetAlternatives();
 
-        foreach (var alternative in config.LanguageAlternatives)
+        foreach (var alternative in alternatives)
         {
             foreach (var mirror in alternative.MirroredLibraries)
             {
-                // Add source library
                 managed.Add(mirror.SourceLibraryId);
 
-                // Add mirror library if it exists
                 if (mirror.TargetLibraryId.HasValue)
                 {
                     managed.Add(mirror.TargetLibraryId.Value);
@@ -354,7 +324,6 @@ public class LibraryAccessService : ILibraryAccessService
 
         if (user.HasPermission(PermissionKind.EnableAllFolders))
         {
-            // User has access to all folders
             foreach (var folder in _libraryManager.GetVirtualFolders())
             {
                 result.Add(Guid.Parse(folder.ItemId));
@@ -381,11 +350,7 @@ public class LibraryAccessService : ILibraryAccessService
     /// <inheritdoc />
     public async Task<int> EnableAllUsersAsync(CancellationToken cancellationToken = default)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return 0;
-        }
+        _logger.PolyglotDebug("EnableAllUsersAsync: Starting");
 
         var allUsers = _userManager.Users.ToList();
         var enabledCount = 0;
@@ -396,32 +361,24 @@ public class LibraryAccessService : ILibraryAccessService
 
             try
             {
-                // Check if user already has a config entry
-                var existingConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == user.Id);
+                // Check existing state before update to determine if this is a new enablement
+                var existingConfig = _configService.GetUserLanguage(user.Id);
+                var wasAlreadyManaged = existingConfig?.IsPluginManaged ?? false;
 
-                if (existingConfig != null)
+                // Use atomic update/create through config service
+                _configService.UpdateOrCreateUserLanguage(user.Id, userConfig =>
                 {
-                    // Update existing entry to be managed
-                    if (!existingConfig.IsPluginManaged)
+                    if (!userConfig.IsPluginManaged)
                     {
-                        existingConfig.IsPluginManaged = true;
-                        existingConfig.SetAt = DateTime.UtcNow;
-                        existingConfig.SetBy = "bulk-enable";
-                        enabledCount++;
+                        userConfig.IsPluginManaged = true;
+                        userConfig.SetAt = DateTime.UtcNow;
+                        userConfig.SetBy = "bulk-enable";
                     }
-                }
-                else
+                });
+
+                // Count as "newly enabled" if the user wasn't already managed
+                if (!wasAlreadyManaged)
                 {
-                    // Create new entry for unmanaged user
-                    config.UserLanguages.Add(new UserLanguageConfig
-                    {
-                        UserId = user.Id,
-                        IsPluginManaged = true,
-                        SelectedAlternativeId = null, // Default language
-                        ManuallySet = false,
-                        SetAt = DateTime.UtcNow,
-                        SetBy = "bulk-enable"
-                    });
                     enabledCount++;
                 }
 
@@ -430,52 +387,54 @@ public class LibraryAccessService : ILibraryAccessService
             }
             catch (Exception ex)
             {
-                _logger.PolyglotError(ex, "Failed to enable user {0}", user.Username);
+                _logger.PolyglotError(ex, "EnableAllUsersAsync: Failed to enable user {0}", user.Username);
             }
         }
 
-        // Save configuration
-        Plugin.Instance?.SaveConfiguration();
-
-        _logger.PolyglotInfo("Enabled plugin management for {0} users", enabledCount);
+        _logger.PolyglotInfo("EnableAllUsersAsync: Enabled plugin management for {0} users", enabledCount);
         return enabledCount;
     }
 
     /// <inheritdoc />
     public async Task DisableUserAsync(Guid userId, bool restoreFullAccess = false, CancellationToken cancellationToken = default)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return;
-        }
+        _logger.PolyglotDebug("DisableUserAsync: Disabling user {0}", userId);
 
         var user = _userManager.GetUserById(userId);
         if (user == null)
         {
-            _logger.PolyglotWarning("User {0} not found", userId);
+            _logger.PolyglotWarning("DisableUserAsync: User {0} not found", userId);
             return;
         }
 
-        // Find and update user config
-        var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
-        if (userConfig != null)
+        // Update user config atomically - check return value to verify the update succeeded
+        var updated = _configService.UpdateUserLanguage(userId, userConfig =>
         {
             userConfig.IsPluginManaged = false;
             userConfig.SetAt = DateTime.UtcNow;
             userConfig.SetBy = "admin-disabled";
+        });
+
+        if (!updated)
+        {
+            // User was never in the plugin's config - this is not necessarily an error,
+            // it just means they weren't being managed by the plugin
+            _logger.PolyglotDebug("DisableUserAsync: User {0} ({1}) was not in plugin config, nothing to disable",
+                userId, user.Username);
         }
 
-        // Optionally restore full access
+        // Optionally restore full access (do this regardless of whether user was in config)
         if (restoreFullAccess)
         {
             user.SetPermission(PermissionKind.EnableAllFolders, true);
             await _userManager.UpdateUserAsync(user).ConfigureAwait(false);
-            _logger.PolyglotInfo("Restored EnableAllFolders for user {0}", user.Username);
+            _logger.PolyglotInfo("DisableUserAsync: Restored EnableAllFolders for user {0}", user.Username);
         }
 
-        Plugin.Instance?.SaveConfiguration();
-        _logger.PolyglotInfo("Disabled plugin management for user {0}", user.Username);
+        if (updated)
+        {
+            _logger.PolyglotInfo("DisableUserAsync: Disabled plugin management for user {0}", user.Username);
+        }
     }
 
     /// <inheritdoc />
@@ -484,7 +443,7 @@ public class LibraryAccessService : ILibraryAccessService
         var user = _userManager.GetUserById(userId);
         if (user == null)
         {
-            _logger.PolyglotWarning("User {0} not found when adding libraries", userId);
+            _logger.PolyglotWarning("AddLibrariesToUserAccessAsync: User {0} not found", userId);
             return;
         }
 
@@ -510,7 +469,6 @@ public class LibraryAccessService : ILibraryAccessService
 
         if (addedCount == 0)
         {
-            // User already has access to all specified libraries
             return;
         }
 
@@ -522,7 +480,7 @@ public class LibraryAccessService : ILibraryAccessService
         await _userManager.UpdateUserAsync(user).ConfigureAwait(false);
 
         _logger.PolyglotInfo(
-            "Added {0} source libraries to user {1}'s access (total: {2})",
+            "AddLibrariesToUserAccessAsync: Added {0} source libraries to user {1} (total: {2})",
             addedCount,
             user.Username,
             newAccess.Count);

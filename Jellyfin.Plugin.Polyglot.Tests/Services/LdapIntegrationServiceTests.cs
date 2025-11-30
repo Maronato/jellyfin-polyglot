@@ -23,8 +23,9 @@ public class LdapIntegrationServiceTests : IDisposable
         _pluginManagerMock = new Mock<IPluginManager>();
         _pluginManagerMock.Setup(m => m.Plugins).Returns(new List<LocalPlugin>());
 
+        var configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var logger = new Mock<ILogger<LdapIntegrationService>>();
-        _service = new LdapIntegrationService(_pluginManagerMock.Object, logger.Object);
+        _service = new LdapIntegrationService(_pluginManagerMock.Object, configServiceMock.Object, logger.Object);
     }
 
     public void Dispose() => _context.Dispose();

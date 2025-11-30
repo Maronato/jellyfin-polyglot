@@ -84,64 +84,54 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <inheritdoc />
     public override void OnUninstalling()
     {
-        var config = Configuration;
+        _logger.PolyglotInfo("Plugin OnUninstalling: Starting cleanup");
 
         try
         {
-            _logger.PolyglotInfo("Polyglot plugin uninstall: starting cleanup of mirror libraries and directories");
-
-            // Resolve the mirror service to handle proper cleanup
+            // Resolve services for cleanup
             var mirrorService = _applicationHost.Resolve<IMirrorService>();
+            var configService = _applicationHost.Resolve<IConfigurationService>();
 
-            foreach (var alternative in config.LanguageAlternatives)
+            // Get mirror IDs (not objects) to iterate - prevents stale reference issues
+            var mirrorIds = configService.GetAlternatives()
+                .SelectMany(a => a.MirroredLibraries.Select(m => new { m.Id, m.TargetLibraryName }))
+                .ToList();
+
+            _logger.PolyglotInfo("Plugin OnUninstalling: Deleting {0} mirrors", mirrorIds.Count);
+
+            foreach (var mirror in mirrorIds)
             {
-                // Create a copy of the list since DeleteMirrorAsync may modify it
-                var mirrorsToDelete = alternative.MirroredLibraries.ToList();
-
-                foreach (var mirror in mirrorsToDelete)
+                try
                 {
-                    try
-                    {
-                        _logger.PolyglotInfo(
-                            "Polyglot uninstall: deleting mirror {0} ({1})",
-                            mirror.Id,
-                            mirror.TargetLibraryName);
+                    _logger.PolyglotDebug("Plugin OnUninstalling: Deleting mirror {0} ({1})",
+                        mirror.Id, mirror.TargetLibraryName);
 
-                        // Use the service's DeleteMirrorAsync which handles:
-                        // - Removing the Jellyfin virtual folder with refreshLibrary: true
-                        // - Deleting the mirror files/directory
-                        // - Proper locking and error handling
-                        mirrorService
-                            .DeleteMirrorAsync(mirror, deleteLibrary: true, deleteFiles: true)
-                            .GetAwaiter()
-                            .GetResult();
-                    }
-                    catch (Exception ex)
+                    // Use forceConfigRemoval=true during uninstall to ensure cleanup completes
+                    var result = mirrorService
+                        .DeleteMirrorAsync(mirror.Id, deleteLibrary: true, deleteFiles: true, forceConfigRemoval: true)
+                        .GetAwaiter()
+                        .GetResult();
+
+                    if (result.HasErrors)
                     {
-                        _logger.PolyglotWarning(
-                            ex,
-                            "Polyglot uninstall: failed to delete mirror {0}",
-                            mirror.Id);
+                        _logger.PolyglotWarning("Plugin OnUninstalling: Mirror {0} removed with errors: {1} {2}",
+                            mirror.Id, result.LibraryDeletionError, result.FileDeletionError);
                     }
                 }
+                catch (Exception ex)
+                {
+                    _logger.PolyglotWarning(ex, "Plugin OnUninstalling: Failed to delete mirror {0}", mirror.Id);
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.PolyglotError(ex, "Polyglot plugin uninstall: unexpected error during cleanup");
-        }
 
-        // Clear configuration to avoid leaving stale state behind on disk
-        try
-        {
-            config.LanguageAlternatives.Clear();
-            config.UserLanguages.Clear();
-            config.LdapGroupMappings.Clear();
-            SaveConfiguration();
+            // Clear all configuration using the config service
+            configService.ClearAllConfiguration();
+
+            _logger.PolyglotInfo("Plugin OnUninstalling: Cleanup completed");
         }
         catch (Exception ex)
         {
-            _logger.PolyglotWarning(ex, "Polyglot plugin uninstall: failed to save cleaned configuration");
+            _logger.PolyglotError(ex, "Plugin OnUninstalling: Unexpected error during cleanup");
         }
     }
 }

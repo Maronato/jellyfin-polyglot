@@ -41,5 +41,22 @@ public class UserLanguageConfig
     /// Gets or sets the source of assignment: "ldap", "admin", "user-sync".
     /// </summary>
     public string? SetBy { get; set; }
+
+    /// <summary>
+    /// Creates a deep copy of this user language config.
+    /// </summary>
+    /// <returns>A new UserLanguageConfig instance with copied values.</returns>
+    public UserLanguageConfig DeepClone()
+    {
+        return new UserLanguageConfig
+        {
+            UserId = UserId,
+            IsPluginManaged = IsPluginManaged,
+            SelectedAlternativeId = SelectedAlternativeId,
+            ManuallySet = ManuallySet,
+            SetAt = SetAt,
+            SetBy = SetBy
+        };
+    }
 }
 

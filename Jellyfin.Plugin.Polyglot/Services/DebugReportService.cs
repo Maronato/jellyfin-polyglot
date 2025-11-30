@@ -20,12 +20,14 @@ namespace Jellyfin.Plugin.Polyglot.Services;
 
 /// <summary>
 /// Service for generating debug reports for troubleshooting.
+/// Uses IConfigurationService for plugin config access.
 /// </summary>
 public partial class DebugReportService : IDebugReportService
 {
     private readonly IApplicationHost _applicationHost;
     private readonly ILibraryManager _libraryManager;
     private readonly IUserManager _userManager;
+    private readonly IConfigurationService _configService;
     private readonly ILogger<DebugReportService> _logger;
 
     // Static circular buffer for recent logs (accessible across the plugin)
@@ -66,11 +68,13 @@ public partial class DebugReportService : IDebugReportService
         IApplicationHost applicationHost,
         ILibraryManager libraryManager,
         IUserManager userManager,
+        IConfigurationService configService,
         ILogger<DebugReportService> logger)
     {
         _applicationHost = applicationHost;
         _libraryManager = libraryManager;
         _userManager = userManager;
+        _configService = configService;
         _logger = logger;
     }
 
@@ -143,42 +147,53 @@ public partial class DebugReportService : IDebugReportService
 
     private ConfigurationSummary GetConfigurationSummary()
     {
-        var config = Plugin.Instance?.Configuration;
+        var config = _configService.GetConfiguration();
         if (config == null)
         {
             return new ConfigurationSummary();
         }
 
-        var totalMirrors = config.LanguageAlternatives.Sum(a => a.MirroredLibraries.Count);
-        var managedUsers = config.UserLanguages.Count(u => u.IsPluginManaged);
+        // Use thread-safe deep copy methods for collection access
+        var alternatives = _configService.GetAlternatives();
+        var userLanguages = _configService.GetUserLanguages();
+
+        var totalMirrors = alternatives.Sum(a => a.MirroredLibraries.Count);
+        var managedUsers = userLanguages.Count(u => u.IsPluginManaged);
+
+        // Use thread-safe accessors for collection counts (HashSet is not thread-safe)
+        var excludedExtensionCount = _configService.GetExcludedExtensions().Count;
+        var excludedDirectoryCount = _configService.GetExcludedDirectories().Count;
 
         return new ConfigurationSummary
         {
-            LanguageAlternativeCount = config.LanguageAlternatives.Count,
+            LanguageAlternativeCount = alternatives.Count,
             TotalMirrorCount = totalMirrors,
             ManagedUserCount = managedUsers,
             AutoManageNewUsers = config.AutoManageNewUsers,
             SyncAfterLibraryScan = config.SyncMirrorsAfterLibraryScan,
             LdapIntegrationEnabled = config.EnableLdapIntegration,
-            ExcludedExtensionCount = config.ExcludedExtensions.Count,
-            ExcludedDirectoryCount = config.ExcludedDirectories.Count
+            ExcludedExtensionCount = excludedExtensionCount,
+            ExcludedDirectoryCount = excludedDirectoryCount
         };
     }
 
     private async Task<List<MirrorHealthInfo>> GetMirrorHealthAsync(DebugReportOptions options, CancellationToken cancellationToken)
     {
-        var config = Plugin.Instance?.Configuration;
+        var config = _configService.GetConfiguration();
         if (config == null)
         {
             return new List<MirrorHealthInfo>();
         }
+
+        // Use thread-safe deep copy for collection access
+        var alternatives = _configService.GetAlternatives();
 
         var results = new List<MirrorHealthInfo>();
         var existingLibraryIds = GetExistingLibraryIds();
         var virtualFolders = _libraryManager.GetVirtualFolders();
         var altIndex = 0;
 
-        foreach (var alternative in config.LanguageAlternatives)
+        foreach (var alternative in alternatives)
         {
             altIndex++;
             var mirrorIndex = 0;
@@ -255,16 +270,20 @@ public partial class DebugReportService : IDebugReportService
 
     private List<UserDistributionInfo> GetUserDistribution(DebugReportOptions options)
     {
-        var config = Plugin.Instance?.Configuration;
+        var config = _configService.GetConfiguration();
         if (config == null)
         {
             return new List<UserDistributionInfo>();
         }
 
+        // Use thread-safe deep copies for collection access
+        var alternatives = _configService.GetAlternatives();
+        var userLanguages = _configService.GetUserLanguages();
+
         var distribution = new List<UserDistributionInfo>();
 
         // Count users per alternative
-        var managedUsers = config.UserLanguages.Where(u => u.IsPluginManaged).ToList();
+        var managedUsers = userLanguages.Where(u => u.IsPluginManaged).ToList();
 
         // Count users with no specific alternative (default)
         var defaultCount = managedUsers.Count(u => u.SelectedAlternativeId == null);
@@ -285,7 +304,7 @@ public partial class DebugReportService : IDebugReportService
 
         // Per alternative
         var altIndex = 0;
-        foreach (var alt in config.LanguageAlternatives)
+        foreach (var alt in alternatives)
         {
             altIndex++;
             var count = usersByAlt.GetValueOrDefault(alt.Id, 0);
@@ -300,7 +319,7 @@ public partial class DebugReportService : IDebugReportService
         }
 
         // Not managed
-        var notManagedCount = config.UserLanguages.Count(u => !u.IsPluginManaged);
+        var notManagedCount = userLanguages.Count(u => !u.IsPluginManaged);
         if (notManagedCount > 0)
         {
             distribution.Add(new UserDistributionInfo
@@ -315,15 +334,19 @@ public partial class DebugReportService : IDebugReportService
 
     private List<UserDetailInfo> GetUserDetails(DebugReportOptions options)
     {
-        var config = Plugin.Instance?.Configuration;
+        var config = _configService.GetConfiguration();
         if (config == null)
         {
             return new List<UserDetailInfo>();
         }
 
+        // Use thread-safe deep copies for collection access
+        var alternatives = _configService.GetAlternatives();
+        var userLanguages = _configService.GetUserLanguages();
+
         var details = new List<UserDetailInfo>();
         var altIndex = 0;
-        var altMap = config.LanguageAlternatives.ToDictionary(
+        var altMap = alternatives.ToDictionary(
             a => a.Id,
             a => new { Index = ++altIndex, Alt = a });
 
@@ -342,7 +365,7 @@ public partial class DebugReportService : IDebugReportService
             // If we can't get users, we'll fall back to showing IDs
         }
 
-        foreach (var userConfig in config.UserLanguages)
+        foreach (var userConfig in userLanguages)
         {
             string language;
             if (userConfig.SelectedAlternativeId == null)
@@ -385,21 +408,20 @@ public partial class DebugReportService : IDebugReportService
 
     private List<LibrarySummaryInfo> GetLibrarySummaries(DebugReportOptions options)
     {
-        var config = Plugin.Instance?.Configuration;
         var virtualFolders = _libraryManager.GetVirtualFolders();
+
+        // Use thread-safe deep copy for collection access
+        var alternatives = _configService.GetAlternatives();
 
         // Build set of mirror library IDs
         var mirrorIds = new HashSet<Guid>();
-        if (config != null)
+        foreach (var alt in alternatives)
         {
-            foreach (var alt in config.LanguageAlternatives)
+            foreach (var mirror in alt.MirroredLibraries)
             {
-                foreach (var mirror in alt.MirroredLibraries)
+                if (mirror.TargetLibraryId.HasValue)
                 {
-                    if (mirror.TargetLibraryId.HasValue)
-                    {
-                        mirrorIds.Add(mirror.TargetLibraryId.Value);
-                    }
+                    mirrorIds.Add(mirror.TargetLibraryId.Value);
                 }
             }
         }
@@ -494,18 +516,15 @@ public partial class DebugReportService : IDebugReportService
 
     private List<FilesystemDiagnostics> GetFilesystemDiagnostics(DebugReportOptions options)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return new List<FilesystemDiagnostics>();
-        }
+        // Use thread-safe deep copy for collection access
+        var alternatives = _configService.GetAlternatives();
 
         var results = new List<FilesystemDiagnostics>();
         var checkedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var virtualFolders = _libraryManager.GetVirtualFolders();
 
         // Check source library paths first
-        foreach (var alt in config.LanguageAlternatives)
+        foreach (var alt in alternatives)
         {
             foreach (var mirror in alt.MirroredLibraries)
             {
@@ -531,7 +550,7 @@ public partial class DebugReportService : IDebugReportService
         }
 
         // Check all mirror target paths
-        foreach (var alt in config.LanguageAlternatives)
+        foreach (var alt in alternatives)
         {
             foreach (var mirror in alt.MirroredLibraries)
             {
@@ -612,17 +631,14 @@ public partial class DebugReportService : IDebugReportService
 
     private async Task<HardlinkVerification?> VerifyHardlinksAsync(DebugReportOptions options, CancellationToken cancellationToken)
     {
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
-        {
-            return null;
-        }
+        // Use thread-safe deep copy for collection access
+        var alternatives = _configService.GetAlternatives();
 
         var verification = new HardlinkVerification();
         var samples = new List<HardlinkSample>();
 
         // Find some files in mirror directories to verify
-        foreach (var alt in config.LanguageAlternatives)
+        foreach (var alt in alternatives)
         {
             foreach (var mirror in alt.MirroredLibraries)
             {

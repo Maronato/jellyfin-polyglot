@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Jellyfin.Data.Entities;
 using Jellyfin.Data.Enums;
@@ -110,6 +113,282 @@ public static class MockFactory
             IsConfigured = isAvailable,
             IsIntegrationEnabled = isAvailable
         });
+        return mock;
+    }
+
+    /// <summary>
+    /// Creates a mock IConfigurationService with optional initial configuration.
+    /// Returns deep copies from Get* methods to match real ConfigurationService behavior.
+    /// </summary>
+    public static Mock<IConfigurationService> CreateConfigurationService(PluginConfiguration? config = null)
+    {
+        var mock = new Mock<IConfigurationService>();
+        config ??= CreatePluginConfiguration();
+
+        // Setup GetConfiguration - returns live reference (matches real behavior for scalar properties)
+        mock.Setup(m => m.GetConfiguration()).Returns(config);
+
+        // Setup GetAlternatives - returns deep copies to match real service
+        mock.Setup(m => m.GetAlternatives())
+            .Returns(() => config.LanguageAlternatives.Select(a => a.DeepClone()).ToList());
+
+        // Setup GetAlternative - returns deep copy to match real service
+        mock.Setup(m => m.GetAlternative(It.IsAny<Guid>()))
+            .Returns((Guid id) => config.LanguageAlternatives.FirstOrDefault(a => a.Id == id)?.DeepClone());
+
+        // Setup GetMirror - returns deep copy to match real service
+        mock.Setup(m => m.GetMirror(It.IsAny<Guid>()))
+            .Returns((Guid id) => config.LanguageAlternatives
+                .SelectMany(a => a.MirroredLibraries)
+                .FirstOrDefault(m => m.Id == id)?.DeepClone());
+
+        // Setup GetMirrorWithAlternative - returns deep copy to match real service
+        mock.Setup(m => m.GetMirrorWithAlternative(It.IsAny<Guid>()))
+            .Returns((Guid id) =>
+            {
+                foreach (var alt in config.LanguageAlternatives)
+                {
+                    var mirror = alt.MirroredLibraries.FirstOrDefault(m => m.Id == id);
+                    if (mirror != null)
+                    {
+                        // Return deep copy to prevent test code from modifying config state
+                        return (mirror.DeepClone(), alt.Id);
+                    }
+                }
+                return null;
+            });
+
+        // Setup GetUserLanguages - returns deep copies to match real service
+        mock.Setup(m => m.GetUserLanguages())
+            .Returns(() => config.UserLanguages.Select(u => u.DeepClone()).ToList());
+
+        // Setup GetUserLanguage - returns deep copy to match real service
+        mock.Setup(m => m.GetUserLanguage(It.IsAny<Guid>()))
+            .Returns((Guid id) => config.UserLanguages.FirstOrDefault(u => u.UserId == id)?.DeepClone());
+
+        // Setup GetLdapGroupMappings - returns deep copies to match real service
+        mock.Setup(m => m.GetLdapGroupMappings())
+            .Returns(() => config.LdapGroupMappings.Select(m => m.DeepClone()).ToList());
+
+        // Setup mutation methods to actually modify the config
+        mock.Setup(m => m.UpdateMirror(It.IsAny<Guid>(), It.IsAny<Action<LibraryMirror>>()))
+            .Returns((Guid id, Action<LibraryMirror> action) =>
+            {
+                var mirror = config.LanguageAlternatives.SelectMany(a => a.MirroredLibraries).FirstOrDefault(m => m.Id == id);
+                if (mirror != null)
+                {
+                    action(mirror);
+                    return true;
+                }
+                return false;
+            });
+
+        mock.Setup(m => m.UpdateAlternative(It.IsAny<Guid>(), It.IsAny<Action<LanguageAlternative>>()))
+            .Returns((Guid id, Action<LanguageAlternative> action) =>
+            {
+                var alt = config.LanguageAlternatives.FirstOrDefault(a => a.Id == id);
+                if (alt != null)
+                {
+                    action(alt);
+                    return true;
+                }
+                return false;
+            });
+
+        mock.Setup(m => m.UpdateUserLanguage(It.IsAny<Guid>(), It.IsAny<Action<UserLanguageConfig>>()))
+            .Returns((Guid id, Action<UserLanguageConfig> action) =>
+            {
+                var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == id);
+                if (userConfig != null)
+                {
+                    action(userConfig);
+                    return true;
+                }
+                return false;
+            });
+
+        mock.Setup(m => m.UpdateOrCreateUserLanguage(It.IsAny<Guid>(), It.IsAny<Action<UserLanguageConfig>>()))
+            .Returns((Guid userId, Action<UserLanguageConfig> action) =>
+            {
+                var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
+                bool isNew = userConfig == null;
+                if (isNew)
+                {
+                    userConfig = new UserLanguageConfig { UserId = userId };
+                    config.UserLanguages.Add(userConfig);
+                }
+                action(userConfig);
+                return isNew;
+            });
+
+        mock.Setup(m => m.AddMirror(It.IsAny<Guid>(), It.IsAny<LibraryMirror>()))
+            .Returns((Guid altId, LibraryMirror mirror) =>
+            {
+                var alt = config.LanguageAlternatives.FirstOrDefault(a => a.Id == altId);
+                if (alt == null)
+                {
+                    return false;
+                }
+
+                // Atomic duplicate source library check to match real implementation
+                if (alt.MirroredLibraries.Any(m => m.SourceLibraryId == mirror.SourceLibraryId))
+                {
+                    return false;
+                }
+
+                alt.MirroredLibraries.Add(mirror);
+                return true;
+            });
+
+        mock.Setup(m => m.RemoveMirror(It.IsAny<Guid>()))
+            .Returns((Guid id) =>
+            {
+                foreach (var alt in config.LanguageAlternatives)
+                {
+                    var mirror = alt.MirroredLibraries.FirstOrDefault(m => m.Id == id);
+                    if (mirror != null)
+                    {
+                        alt.MirroredLibraries.Remove(mirror);
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+        mock.Setup(m => m.RemoveAlternative(It.IsAny<Guid>()))
+            .Returns((Guid id) =>
+            {
+                var alt = config.LanguageAlternatives.FirstOrDefault(a => a.Id == id);
+                if (alt != null)
+                {
+                    config.LanguageAlternatives.Remove(alt);
+
+                    // Clear DefaultLanguageAlternativeId if it references the deleted alternative
+                    if (config.DefaultLanguageAlternativeId == id)
+                    {
+                        config.DefaultLanguageAlternativeId = null;
+                    }
+
+                    // Remove LDAP group mappings that reference this alternative
+                    config.LdapGroupMappings.RemoveAll(m => m.LanguageAlternativeId == id);
+
+                    return true;
+                }
+                return false;
+            });
+
+        mock.Setup(m => m.TryRemoveAlternativeAtomic(It.IsAny<Guid>(), It.IsAny<IReadOnlySet<Guid>>()))
+            .Returns((Guid id, IReadOnlySet<Guid> expectedMirrorIds) =>
+            {
+                var alt = config.LanguageAlternatives.FirstOrDefault(a => a.Id == id);
+                if (alt == null)
+                {
+                    return RemoveAlternativeResult.NotFound();
+                }
+
+                // Check for unexpected mirrors
+                var currentMirrorIds = alt.MirroredLibraries.Select(m => m.Id).ToHashSet();
+                var unexpectedMirrorIds = currentMirrorIds.Except(expectedMirrorIds).ToList();
+                if (unexpectedMirrorIds.Count > 0)
+                {
+                    return RemoveAlternativeResult.NewMirrorsFound(unexpectedMirrorIds);
+                }
+
+                config.LanguageAlternatives.Remove(alt);
+
+                // Clear DefaultLanguageAlternativeId if it references the deleted alternative
+                if (config.DefaultLanguageAlternativeId == id)
+                {
+                    config.DefaultLanguageAlternativeId = null;
+                }
+
+                // Remove LDAP group mappings that reference this alternative
+                config.LdapGroupMappings.RemoveAll(m => m.LanguageAlternativeId == id);
+
+                return RemoveAlternativeResult.Succeeded();
+            });
+
+        mock.Setup(m => m.RemoveUserLanguage(It.IsAny<Guid>()))
+            .Returns((Guid id) =>
+            {
+                var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == id);
+                if (userConfig != null)
+                {
+                    config.UserLanguages.Remove(userConfig);
+                    return true;
+                }
+                return false;
+            });
+
+        mock.Setup(m => m.RemoveLdapGroupMapping(It.IsAny<Guid>()))
+            .Returns((Guid id) =>
+            {
+                var mapping = config.LdapGroupMappings.FirstOrDefault(m => m.Id == id);
+                if (mapping != null)
+                {
+                    config.LdapGroupMappings.Remove(mapping);
+                    return true;
+                }
+                return false;
+            });
+
+        mock.Setup(m => m.AddAlternative(It.IsAny<LanguageAlternative>()))
+            .Returns((LanguageAlternative alt) =>
+            {
+                // Atomic duplicate name check to match real implementation
+                if (config.LanguageAlternatives.Any(a => string.Equals(a.Name, alt.Name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return false;
+                }
+                config.LanguageAlternatives.Add(alt);
+                return true;
+            });
+
+        mock.Setup(m => m.AddLdapGroupMapping(It.IsAny<LdapGroupMapping>()))
+            .Returns((LdapGroupMapping mapping) =>
+            {
+                // Atomic duplicate check to match real implementation
+                if (config.LdapGroupMappings.Any(m => string.Equals(m.LdapGroupDn, mapping.LdapGroupDn, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return false;
+                }
+                config.LdapGroupMappings.Add(mapping);
+                return true;
+            });
+
+        // Thread-safe collection getters
+        mock.Setup(m => m.GetExcludedExtensions())
+            .Returns(() => config.ExcludedExtensions?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        mock.Setup(m => m.GetExcludedDirectories())
+            .Returns(() => config.ExcludedDirectories?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        mock.Setup(m => m.GetDefaultExcludedExtensions())
+            .Returns(() => config.DefaultExcludedExtensions?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        mock.Setup(m => m.GetDefaultExcludedDirectories())
+            .Returns(() => config.DefaultExcludedDirectories?.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        // UpdateSettings with Action (always saves)
+        mock.Setup(m => m.UpdateSettings(It.IsAny<Action<PluginConfiguration>>()))
+            .Callback((Action<PluginConfiguration> action) => action(config));
+
+        // UpdateSettings with Func<,bool> (saves only if function returns true)
+        mock.Setup(m => m.UpdateSettings(It.IsAny<Func<PluginConfiguration, bool>>()))
+            .Returns((Func<PluginConfiguration, bool> func) => func(config));
+
+        mock.Setup(m => m.ClearAllConfiguration())
+            .Callback(() =>
+            {
+                config.LanguageAlternatives.Clear();
+                config.UserLanguages.Clear();
+                config.LdapGroupMappings.Clear();
+            });
+
         return mock;
     }
 

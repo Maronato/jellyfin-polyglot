@@ -29,9 +29,12 @@ public class UserCreatedConsumerTests : IDisposable
         _ldapIntegrationServiceMock = new Mock<ILdapIntegrationService>();
         var logger = new Mock<ILogger<UserCreatedConsumer>>();
 
+        var configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
+
         _consumer = new UserCreatedConsumer(
             _userLanguageServiceMock.Object,
             _ldapIntegrationServiceMock.Object,
+            configServiceMock.Object,
             logger.Object);
     }
 
@@ -276,12 +279,14 @@ public class LibraryChangedConsumerTests : IDisposable
         _libraryManagerMock = new Mock<ILibraryManager>();
         _mirrorServiceMock = new Mock<IMirrorService>();
         _libraryAccessServiceMock = new Mock<ILibraryAccessService>();
+        var configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var logger = new Mock<ILogger<LibraryChangedConsumer>>();
 
         _consumer = new LibraryChangedConsumer(
             _libraryManagerMock.Object,
             _mirrorServiceMock.Object,
             _libraryAccessServiceMock.Object,
+            configServiceMock.Object,
             logger.Object);
     }
 

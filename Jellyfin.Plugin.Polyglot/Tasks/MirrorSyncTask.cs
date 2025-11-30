@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Polyglot.Helpers;
@@ -11,18 +12,24 @@ namespace Jellyfin.Plugin.Polyglot.Tasks;
 
 /// <summary>
 /// Scheduled task that synchronizes all library mirrors.
+/// Uses IConfigurationService for config access and IDs for mirror operations.
 /// </summary>
 public class MirrorSyncTask : IScheduledTask
 {
     private readonly IMirrorService _mirrorService;
+    private readonly IConfigurationService _configService;
     private readonly ILogger<MirrorSyncTask> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MirrorSyncTask"/> class.
     /// </summary>
-    public MirrorSyncTask(IMirrorService mirrorService, ILogger<MirrorSyncTask> logger)
+    public MirrorSyncTask(
+        IMirrorService mirrorService,
+        IConfigurationService configService,
+        ILogger<MirrorSyncTask> logger)
     {
         _mirrorService = mirrorService;
+        _configService = configService;
         _logger = logger;
     }
 
@@ -41,7 +48,6 @@ public class MirrorSyncTask : IScheduledTask
     /// <inheritdoc />
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
     {
-        // Use compatibility helper to handle string (10.10.x) vs enum (10.11+) Type property
         return new[]
         {
             JellyfinCompatibility.CreateIntervalTrigger(TimeSpan.FromHours(6).Ticks)
@@ -51,68 +57,95 @@ public class MirrorSyncTask : IScheduledTask
     /// <inheritdoc />
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        _logger.PolyglotInfo("Starting mirror sync task");
+        _logger.PolyglotInfo("MirrorSyncTask: Starting mirror sync");
 
-        // First, cleanup any orphaned mirrors (e.g., if a library was deleted externally)
-        // This is important because the ItemRemoved event may not fire when a library is
-        // deleted via Jellyfin's UI (ValidateTopLibraryFolders deletes directly from DB)
+        // First, cleanup any orphaned mirrors
         try
         {
             var cleanupResult = await _mirrorService.CleanupOrphanedMirrorsAsync(cancellationToken).ConfigureAwait(false);
             if (cleanupResult.TotalCleaned > 0)
             {
-                _logger.PolyglotInfo("Cleaned up {0} orphaned mirrors before sync", cleanupResult.TotalCleaned);
+                _logger.PolyglotInfo("MirrorSyncTask: Cleaned up {0} orphaned mirrors", cleanupResult.TotalCleaned);
             }
         }
         catch (Exception ex)
         {
-            _logger.PolyglotWarning(ex, "Failed to cleanup orphaned mirrors, continuing with sync");
+            _logger.PolyglotWarning(ex, "MirrorSyncTask: Failed to cleanup orphaned mirrors, continuing");
         }
 
-        var config = Plugin.Instance?.Configuration;
-        if (config == null)
+        // Get alternative IDs (not objects) for iteration
+        var alternatives = _configService.GetAlternatives();
+        var alternativeIds = alternatives.Select(a => a.Id).ToList();
+
+        if (alternativeIds.Count == 0)
         {
-            _logger.PolyglotWarning("Plugin configuration not available");
+            _logger.PolyglotInfo("MirrorSyncTask: No language alternatives configured");
             return;
         }
 
-        var alternatives = config.LanguageAlternatives;
-        if (alternatives.Count == 0)
-        {
-            _logger.PolyglotInfo("No language alternatives configured, nothing to sync");
-            return;
-        }
-
-        var totalAlternatives = alternatives.Count;
+        var totalAlternatives = alternativeIds.Count;
         var completedAlternatives = 0;
 
-        foreach (var alternative in alternatives)
+        foreach (var alternativeId in alternativeIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            _logger.PolyglotInfo("Syncing mirrors for language alternative: {0}", alternative.Name);
+            // Get fresh alternative data for logging
+            var alternative = _configService.GetAlternative(alternativeId);
+            if (alternative == null)
+            {
+                _logger.PolyglotDebug("MirrorSyncTask: Alternative {0} no longer exists, skipping", alternativeId);
+                completedAlternatives++;
+                continue;
+            }
+
+            _logger.PolyglotInfo("MirrorSyncTask: Syncing mirrors for alternative: {0}", alternative.Name);
 
             var altProgress = new Progress<double>(p =>
             {
                 var overallProgress = ((completedAlternatives * 100.0) + p) / totalAlternatives;
-                progress.Report(overallProgress);
+                SafeReportProgress(progress, overallProgress);
             });
 
             try
             {
-                await _mirrorService.SyncAllMirrorsAsync(alternative, altProgress, cancellationToken).ConfigureAwait(false);
+                // Use ID instead of object reference
+                var result = await _mirrorService.SyncAllMirrorsAsync(alternativeId, altProgress, cancellationToken).ConfigureAwait(false);
+
+                if (result.Status == SyncAllStatus.AlternativeNotFound)
+                {
+                    _logger.PolyglotWarning("MirrorSyncTask: Alternative {0} was deleted during sync", alternative.Name);
+                }
+                else if (result.MirrorsFailed > 0)
+                {
+                    _logger.PolyglotWarning("MirrorSyncTask: Alternative {0} synced with {1} failures out of {2} mirrors",
+                        alternative.Name, result.MirrorsFailed, result.TotalMirrors);
+                }
             }
             catch (Exception ex)
             {
-                _logger.PolyglotError(ex, "Failed to sync mirrors for language alternative: {0}", alternative.Name);
-                // Continue with other alternatives
+                _logger.PolyglotError(ex, "MirrorSyncTask: Failed to sync alternative: {0}", alternative.Name);
             }
 
             completedAlternatives++;
         }
 
-        progress.Report(100);
-        _logger.PolyglotInfo("Mirror sync task completed");
+        SafeReportProgress(progress, 100);
+        _logger.PolyglotInfo("MirrorSyncTask: Completed");
+    }
+
+    /// <summary>
+    /// Safely reports progress without throwing if the callback fails.
+    /// </summary>
+    private void SafeReportProgress(IProgress<double> progress, double value)
+    {
+        try
+        {
+            progress.Report(value);
+        }
+        catch (Exception ex)
+        {
+            _logger.PolyglotDebug("MirrorSyncTask: Progress callback failed: {0}", ex.Message);
+        }
     }
 }
-

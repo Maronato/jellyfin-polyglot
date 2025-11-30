@@ -42,11 +42,13 @@ public class UserLibraryAccessBehaviorTests : IDisposable
         _context = new PluginTestContext();
         _userManagerMock = new Mock<IUserManager>();
         _libraryManagerMock = new Mock<ILibraryManager>();
+        var configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var logger = new Mock<ILogger<LibraryAccessService>>();
 
         _libraryAccessService = new LibraryAccessService(
             _userManagerMock.Object,
             _libraryManagerMock.Object,
+            configServiceMock.Object,
             logger.Object);
 
         SetupTypicalLibraryEnvironment();

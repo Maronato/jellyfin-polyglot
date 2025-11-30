@@ -61,5 +61,27 @@ public class LibraryMirror
     /// Gets or sets the count of files synced in the last sync operation.
     /// </summary>
     public int LastSyncFileCount { get; set; }
+
+    /// <summary>
+    /// Creates a deep copy of this mirror.
+    /// </summary>
+    /// <returns>A new LibraryMirror instance with copied values.</returns>
+    public LibraryMirror DeepClone()
+    {
+        return new LibraryMirror
+        {
+            Id = Id,
+            SourceLibraryId = SourceLibraryId,
+            SourceLibraryName = SourceLibraryName,
+            TargetLibraryId = TargetLibraryId,
+            TargetLibraryName = TargetLibraryName,
+            TargetPath = TargetPath,
+            CollectionType = CollectionType,
+            Status = Status,
+            LastSyncedAt = LastSyncedAt,
+            LastError = LastError,
+            LastSyncFileCount = LastSyncFileCount
+        };
+    }
 }
 

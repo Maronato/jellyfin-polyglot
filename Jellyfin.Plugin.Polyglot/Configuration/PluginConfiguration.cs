@@ -33,6 +33,13 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableLdapIntegration { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether to fall back to auto-assignment when LDAP lookup fails.
+    /// When true (default), users are assigned the default language if LDAP lookup fails (maintains backward compatibility).
+    /// When false, users remain unassigned if LDAP lookup fails, requiring manual assignment.
+    /// </summary>
+    public bool FallbackOnLdapFailure { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets a value indicating whether new users should be automatically managed by the plugin.
     /// When enabled, newly created users will be added to plugin management with the default language.
     /// </summary>

@@ -39,10 +39,13 @@ public class DebugReportServiceTests : IDisposable
         _libraryManagerMock.Setup(x => x.GetVirtualFolders()).Returns(new List<MediaBrowser.Model.Entities.VirtualFolderInfo>());
         _userManagerMock.Setup(x => x.Users).Returns(Array.Empty<User>());
 
+        var configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
+
         _service = new DebugReportService(
             _applicationHostMock.Object,
             _libraryManagerMock.Object,
             _userManagerMock.Object,
+            configServiceMock.Object,
             _loggerMock.Object);
     }
 

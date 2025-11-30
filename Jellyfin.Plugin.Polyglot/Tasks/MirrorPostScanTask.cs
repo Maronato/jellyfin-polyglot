@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Polyglot.Helpers;
@@ -10,85 +11,121 @@ namespace Jellyfin.Plugin.Polyglot.Tasks;
 
 /// <summary>
 /// Post-scan task that synchronizes mirrors after library scans complete.
-/// This integrates with Jellyfin's native library scanning mechanism.
+/// Uses IConfigurationService for config access and IDs for mirror operations.
 /// </summary>
 public class MirrorPostScanTask : ILibraryPostScanTask
 {
     private readonly IMirrorService _mirrorService;
+    private readonly IConfigurationService _configService;
     private readonly ILogger<MirrorPostScanTask> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MirrorPostScanTask"/> class.
     /// </summary>
-    public MirrorPostScanTask(IMirrorService mirrorService, ILogger<MirrorPostScanTask> logger)
+    public MirrorPostScanTask(
+        IMirrorService mirrorService,
+        IConfigurationService configService,
+        ILogger<MirrorPostScanTask> logger)
     {
         _mirrorService = mirrorService;
+        _configService = configService;
         _logger = logger;
     }
 
     /// <inheritdoc />
     public async Task Run(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        var config = Plugin.Instance?.Configuration;
+        var config = _configService.GetConfiguration();
         if (config == null)
         {
-            _logger.PolyglotWarning("Plugin configuration not available");
+            _logger.PolyglotWarning("MirrorPostScanTask: Configuration not available");
             return;
         }
 
         // Check if auto-sync after library scans is enabled
         if (!config.SyncMirrorsAfterLibraryScan)
         {
-            _logger.PolyglotDebug("Auto-sync after library scans is disabled, skipping");
+            _logger.PolyglotDebug("MirrorPostScanTask: Auto-sync disabled, skipping");
             return;
         }
 
-        _logger.PolyglotInfo("Library scan completed, syncing mirrors...");
+        _logger.PolyglotInfo("MirrorPostScanTask: Library scan completed, syncing mirrors");
 
-        var alternatives = config.LanguageAlternatives;
-        if (alternatives.Count == 0)
+        // Get alternative IDs (not objects) for iteration
+        var alternatives = _configService.GetAlternatives();
+        var alternativeIds = alternatives
+            .Where(a => a.MirroredLibraries.Count > 0) // Only sync alternatives with mirrors
+            .Select(a => a.Id)
+            .ToList();
+
+        if (alternativeIds.Count == 0)
         {
-            _logger.PolyglotDebug("No language alternatives configured, nothing to sync");
+            _logger.PolyglotDebug("MirrorPostScanTask: No alternatives with mirrors to sync");
             return;
         }
 
-        var totalAlternatives = alternatives.Count;
+        var totalAlternatives = alternativeIds.Count;
         var completedAlternatives = 0;
 
-        foreach (var alternative in alternatives)
+        foreach (var alternativeId in alternativeIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Only sync mirrors that have been created
-            if (alternative.MirroredLibraries.Count == 0)
+            // Get fresh alternative data for logging
+            var alternative = _configService.GetAlternative(alternativeId);
+            if (alternative == null)
             {
                 completedAlternatives++;
                 continue;
             }
 
-            _logger.PolyglotDebug("Post-scan sync for language alternative: {0}", alternative.Name);
+            _logger.PolyglotDebug("MirrorPostScanTask: Post-scan sync for alternative: {0}", alternative.Name);
 
             var altProgress = new Progress<double>(p =>
             {
                 var overallProgress = ((completedAlternatives * 100.0) + p) / totalAlternatives;
-                progress.Report(overallProgress);
+                SafeReportProgress(progress, overallProgress);
             });
 
             try
             {
-                await _mirrorService.SyncAllMirrorsAsync(alternative, altProgress, cancellationToken).ConfigureAwait(false);
+                // Use ID instead of object reference
+                var result = await _mirrorService.SyncAllMirrorsAsync(alternativeId, altProgress, cancellationToken).ConfigureAwait(false);
+
+                if (result.Status == SyncAllStatus.AlternativeNotFound)
+                {
+                    _logger.PolyglotWarning("MirrorPostScanTask: Alternative {0} was deleted during sync", alternative.Name);
+                }
+                else if (result.MirrorsFailed > 0)
+                {
+                    _logger.PolyglotWarning("MirrorPostScanTask: Alternative {0} synced with {1} failures out of {2} mirrors",
+                        alternative.Name, result.MirrorsFailed, result.TotalMirrors);
+                }
             }
             catch (Exception ex)
             {
-                _logger.PolyglotError(ex, "Failed to sync mirrors for language alternative: {0}", alternative.Name);
-                // Continue with other alternatives
+                _logger.PolyglotError(ex, "MirrorPostScanTask: Failed to sync alternative: {0}", alternative.Name);
             }
 
             completedAlternatives++;
         }
 
-        progress.Report(100);
-        _logger.PolyglotInfo("Post-scan mirror sync completed");
+        SafeReportProgress(progress, 100);
+        _logger.PolyglotInfo("MirrorPostScanTask: Completed");
+    }
+
+    /// <summary>
+    /// Safely reports progress without throwing if the callback fails.
+    /// </summary>
+    private void SafeReportProgress(IProgress<double> progress, double value)
+    {
+        try
+        {
+            progress.Report(value);
+        }
+        catch (Exception ex)
+        {
+            _logger.PolyglotDebug("MirrorPostScanTask: Progress callback failed: {0}", ex.Message);
+        }
     }
 }
-

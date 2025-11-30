@@ -20,6 +20,7 @@ public class MirrorServiceValidationTests
     private readonly Mock<ILibraryManager> _libraryManagerMock;
     private readonly Mock<IProviderManager> _providerManagerMock;
     private readonly Mock<IFileSystem> _fileSystemMock;
+    private readonly Mock<IConfigurationService> _configServiceMock;
     private readonly MirrorService _service;
 
     public MirrorServiceValidationTests()
@@ -27,8 +28,14 @@ public class MirrorServiceValidationTests
         _libraryManagerMock = new Mock<ILibraryManager>();
         _providerManagerMock = new Mock<IProviderManager>();
         _fileSystemMock = new Mock<IFileSystem>();
+        _configServiceMock = TestHelpers.MockFactory.CreateConfigurationService();
         var logger = new Mock<ILogger<MirrorService>>();
-        _service = new MirrorService(_libraryManagerMock.Object, _providerManagerMock.Object, _fileSystemMock.Object, logger.Object);
+        _service = new MirrorService(
+            _libraryManagerMock.Object,
+            _providerManagerMock.Object,
+            _fileSystemMock.Object,
+            _configServiceMock.Object,
+            logger.Object);
     }
 
     #region ValidateMirrorConfiguration - Input validation
@@ -117,6 +124,7 @@ public class MirrorServiceFileOperationTests : IDisposable
     private readonly Mock<ILibraryManager> _libraryManagerMock;
     private readonly Mock<IProviderManager> _providerManagerMock;
     private readonly Mock<IFileSystem> _fileSystemMock;
+    private readonly Mock<IConfigurationService> _configServiceMock;
     private readonly MirrorService _service;
 
     public MirrorServiceFileOperationTests()
@@ -127,8 +135,14 @@ public class MirrorServiceFileOperationTests : IDisposable
         _libraryManagerMock = new Mock<ILibraryManager>();
         _providerManagerMock = new Mock<IProviderManager>();
         _fileSystemMock = new Mock<IFileSystem>();
+        _configServiceMock = TestHelpers.MockFactory.CreateConfigurationService();
         var logger = new Mock<ILogger<MirrorService>>();
-        _service = new MirrorService(_libraryManagerMock.Object, _providerManagerMock.Object, _fileSystemMock.Object, logger.Object);
+        _service = new MirrorService(
+            _libraryManagerMock.Object,
+            _providerManagerMock.Object,
+            _fileSystemMock.Object,
+            _configServiceMock.Object,
+            logger.Object);
     }
 
     public void Dispose()
@@ -141,6 +155,14 @@ public class MirrorServiceFileOperationTests : IDisposable
             }
         }
         catch { }
+    }
+
+    private void SetupMirrorConfig(LibraryMirror mirror)
+    {
+        _configServiceMock.Setup(m => m.GetMirror(mirror.Id)).Returns(mirror);
+        _configServiceMock.Setup(m => m.UpdateMirror(mirror.Id, It.IsAny<Action<LibraryMirror>>()))
+            .Callback<Guid, Action<LibraryMirror>>((id, action) => action(mirror))
+            .Returns(true);
     }
 
     [Fact]
@@ -169,9 +191,10 @@ public class MirrorServiceFileOperationTests : IDisposable
             TargetPath = targetDir,
             Status = SyncStatus.Pending
         };
+        SetupMirrorConfig(mirror);
 
         // Act
-        await _service.SyncMirrorAsync(mirror);
+        await _service.SyncMirrorAsync(mirror.Id);
 
         // Assert
         var targetFile = Path.Combine(targetDir, "movie.mkv");
@@ -207,9 +230,10 @@ public class MirrorServiceFileOperationTests : IDisposable
             TargetPath = targetDir,
             Status = SyncStatus.Pending
         };
+        SetupMirrorConfig(mirror);
 
         // Act
-        await _service.SyncMirrorAsync(mirror);
+        await _service.SyncMirrorAsync(mirror.Id);
 
         // Assert
         File.Exists(Path.Combine(targetDir, "movie.mkv")).Should().BeTrue("video should be hardlinked");
@@ -226,7 +250,6 @@ public class MirrorServiceFileOperationTests : IDisposable
         Directory.CreateDirectory(sourceDir);
         Directory.CreateDirectory(targetDir);
 
-        // Create initial file
         var sourceFile = Path.Combine(sourceDir, "movie.mkv");
         File.WriteAllText(sourceFile, "video");
 
@@ -244,16 +267,17 @@ public class MirrorServiceFileOperationTests : IDisposable
             TargetPath = targetDir,
             Status = SyncStatus.Pending
         };
+        SetupMirrorConfig(mirror);
 
         // First sync - creates hardlink
-        await _service.SyncMirrorAsync(mirror);
+        await _service.SyncMirrorAsync(mirror.Id);
         File.Exists(Path.Combine(targetDir, "movie.mkv")).Should().BeTrue();
 
         // Delete source file
         File.Delete(sourceFile);
 
         // Second sync - should remove from target
-        await _service.SyncMirrorAsync(mirror);
+        await _service.SyncMirrorAsync(mirror.Id);
 
         // Assert
         File.Exists(Path.Combine(targetDir, "movie.mkv")).Should().BeFalse("deleted file should be removed from mirror");
@@ -269,8 +293,6 @@ public class MirrorServiceFileOperationTests : IDisposable
         Directory.CreateDirectory(targetDir);
 
         var fileName = "updated.srt";
-
-        // 1. Initial State: Source and Target have SAME content (representing a synced hardlink)
         var initialContent = "subtitle version 1";
         var sourceFile = Path.Combine(sourceDir, fileName);
         var targetFile = Path.Combine(targetDir, fileName);
@@ -278,7 +300,6 @@ public class MirrorServiceFileOperationTests : IDisposable
         File.WriteAllText(sourceFile, initialContent);
         File.WriteAllText(targetFile, initialContent);
 
-        // Ensure timestamps match exactly to simulate a hardlink
         var initialTime = DateTime.UtcNow.AddHours(-1);
         File.SetLastWriteTimeUtc(sourceFile, initialTime);
         File.SetLastWriteTimeUtc(targetFile, initialTime);
@@ -297,28 +318,19 @@ public class MirrorServiceFileOperationTests : IDisposable
             TargetPath = targetDir,
             Status = SyncStatus.Synced
         };
+        SetupMirrorConfig(mirror);
 
-        // 2. Scenario A: Timestamp change ONLY (same content)
-        // This simulates a 'touch' or metadata update
+        // Scenario A: Timestamp change ONLY
         File.SetLastWriteTimeUtc(sourceFile, DateTime.UtcNow);
-        
-        // Act A
-        await _service.SyncMirrorAsync(mirror);
-
-        // Assert A: Should still be synced (timestamps match now)
-        // Since we can't easily check if it was re-linked vs just updated, we verify existence
+        await _service.SyncMirrorAsync(mirror.Id);
         File.Exists(targetFile).Should().BeTrue("Target should exist after timestamp update");
-        
-        // 3. Scenario B: Content change (different size/content)
-        // This simulates a file replacement
+
+        // Scenario B: Content change
         var newContent = "subtitle version 2 - significantly updated content with different length";
         File.WriteAllText(sourceFile, newContent);
-        // Note: WriteAllText updates timestamp automatically
+        await _service.SyncMirrorAsync(mirror.Id);
 
-        // Act B
-        await _service.SyncMirrorAsync(mirror);
-
-        // Assert B
+        // Assert
         File.Exists(targetFile).Should().BeTrue("Target file should exist");
         File.ReadAllText(targetFile).Should().Be(newContent, "Mirror content should be updated to match source");
     }
@@ -348,9 +360,10 @@ public class MirrorServiceFileOperationTests : IDisposable
             TargetPath = targetDir,
             Status = SyncStatus.Pending
         };
+        SetupMirrorConfig(mirror);
 
         // Act
-        await _service.SyncMirrorAsync(mirror);
+        await _service.SyncMirrorAsync(mirror.Id);
 
         // Assert
         var expectedPath = Path.Combine(targetDir, "Show", "Season 1", "episode.mkv");
@@ -385,9 +398,10 @@ public class MirrorServiceFileOperationTests : IDisposable
             TargetPath = targetDir,
             Status = SyncStatus.Pending
         };
+        SetupMirrorConfig(mirror);
 
         // Act
-        await _service.SyncMirrorAsync(mirror);
+        await _service.SyncMirrorAsync(mirror.Id);
 
         // Assert
         File.Exists(Path.Combine(targetDir, "movie.mkv")).Should().BeTrue();
@@ -420,13 +434,13 @@ public class MirrorServiceFileOperationTests : IDisposable
             SourceLibraryName = "Movies",
             TargetPath = targetDir
         };
+        SetupMirrorConfig(mirror);
 
         var progressValues = new List<double>();
-        // Use synchronous progress reporter instead of Progress<T> which posts callbacks asynchronously
         var progress = new SynchronousProgress<double>(v => progressValues.Add(v));
 
         // Act
-        await _service.SyncMirrorAsync(mirror, progress);
+        await _service.SyncMirrorAsync(mirror.Id, progress);
 
         // Assert
         progressValues.Should().NotBeEmpty("progress should be reported");
@@ -436,8 +450,7 @@ public class MirrorServiceFileOperationTests : IDisposable
 }
 
 /// <summary>
-/// Synchronous implementation of IProgress that invokes the callback immediately
-/// rather than posting to a synchronization context like Progress&lt;T&gt; does.
+/// Synchronous implementation of IProgress that invokes the callback immediately.
 /// </summary>
 internal sealed class SynchronousProgress<T> : IProgress<T>
 {
@@ -460,6 +473,7 @@ public class MirrorServiceLibraryInfoTests : IDisposable
     private readonly Mock<ILibraryManager> _libraryManagerMock;
     private readonly Mock<IProviderManager> _providerManagerMock;
     private readonly Mock<IFileSystem> _fileSystemMock;
+    private readonly Mock<IConfigurationService> _configServiceMock;
     private readonly MirrorService _service;
 
     public MirrorServiceLibraryInfoTests()
@@ -468,8 +482,14 @@ public class MirrorServiceLibraryInfoTests : IDisposable
         _libraryManagerMock = new Mock<ILibraryManager>();
         _providerManagerMock = new Mock<IProviderManager>();
         _fileSystemMock = new Mock<IFileSystem>();
+        _configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var logger = new Mock<ILogger<MirrorService>>();
-        _service = new MirrorService(_libraryManagerMock.Object, _providerManagerMock.Object, _fileSystemMock.Object, logger.Object);
+        _service = new MirrorService(
+            _libraryManagerMock.Object,
+            _providerManagerMock.Object,
+            _fileSystemMock.Object,
+            _configServiceMock.Object,
+            logger.Object);
     }
 
     public void Dispose() => _context.Dispose();
@@ -547,6 +567,7 @@ public class MirrorServiceRefreshTests : IDisposable
     private readonly Mock<ILibraryManager> _libraryManagerMock;
     private readonly Mock<IProviderManager> _providerManagerMock;
     private readonly Mock<IFileSystem> _fileSystemMock;
+    private readonly Mock<IConfigurationService> _configServiceMock;
     private readonly MirrorService _service;
 
     public MirrorServiceRefreshTests()
@@ -558,8 +579,14 @@ public class MirrorServiceRefreshTests : IDisposable
         _libraryManagerMock = new Mock<ILibraryManager>();
         _providerManagerMock = new Mock<IProviderManager>();
         _fileSystemMock = new Mock<IFileSystem>();
+        _configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var logger = new Mock<ILogger<MirrorService>>();
-        _service = new MirrorService(_libraryManagerMock.Object, _providerManagerMock.Object, _fileSystemMock.Object, logger.Object);
+        _service = new MirrorService(
+            _libraryManagerMock.Object,
+            _providerManagerMock.Object,
+            _fileSystemMock.Object,
+            _configServiceMock.Object,
+            logger.Object);
     }
 
     public void Dispose()
@@ -583,13 +610,11 @@ public class MirrorServiceRefreshTests : IDisposable
         var targetDir = Path.Combine(_tempDir, "target");
         Directory.CreateDirectory(sourceDir);
 
-        // Create a test file so there's something to mirror
         File.WriteAllText(Path.Combine(sourceDir, "movie.mkv"), "video content");
 
         var sourceId = Guid.NewGuid();
         var targetId = Guid.NewGuid();
 
-        // Setup source library
         _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>
         {
             new()
@@ -602,7 +627,6 @@ public class MirrorServiceRefreshTests : IDisposable
             }
         });
 
-        // Setup AddVirtualFolder to succeed (async Task)
         _libraryManagerMock
             .Setup(m => m.AddVirtualFolder(
                 It.IsAny<string>(),
@@ -611,7 +635,6 @@ public class MirrorServiceRefreshTests : IDisposable
                 It.IsAny<bool>()))
             .Returns(Task.CompletedTask);
 
-        // After AddVirtualFolder, GetVirtualFolders should return both libraries
         var callCount = 0;
         _libraryManagerMock
             .Setup(m => m.GetVirtualFolders())
@@ -630,7 +653,6 @@ public class MirrorServiceRefreshTests : IDisposable
                     }
                 };
 
-                // After AddVirtualFolder is called, include the target library
                 if (callCount > 1)
                 {
                     folders.Add(new VirtualFolderInfo
@@ -659,10 +681,18 @@ public class MirrorServiceRefreshTests : IDisposable
         };
         alternative.MirroredLibraries.Add(mirror);
 
-        // Act
-        await _service.CreateMirrorAsync(alternative, mirror);
+        // Setup config service to return mirror and alternative
+        _configServiceMock.Setup(m => m.GetMirror(mirror.Id)).Returns(mirror);
+        _configServiceMock.Setup(m => m.GetMirrorWithAlternative(mirror.Id)).Returns((mirror, alternative.Id));
+        _configServiceMock.Setup(m => m.GetAlternative(alternative.Id)).Returns(alternative);
+        _configServiceMock.Setup(m => m.UpdateMirror(mirror.Id, It.IsAny<Action<LibraryMirror>>()))
+            .Callback<Guid, Action<LibraryMirror>>((id, action) => action(mirror))
+            .Returns(true);
 
-        // Assert - verify QueueRefresh was called with correct options
+        // Act
+        await _service.CreateMirrorAsync(alternative.Id, mirror.Id);
+
+        // Assert
         _providerManagerMock.Verify(
             m => m.QueueRefresh(
                 targetId,
@@ -678,8 +708,7 @@ public class MirrorServiceRefreshTests : IDisposable
 }
 
 /// <summary>
-/// Tests for CleanupOrphanedMirrorsAsync - ensuring orphan mirrors are removed
-/// when Jellyfin libraries are deleted externally (e.g., via Jellyfin's UI).
+/// Tests for CleanupOrphanedMirrorsAsync.
 /// </summary>
 public class MirrorServiceCleanupTests : IDisposable
 {
@@ -687,6 +716,7 @@ public class MirrorServiceCleanupTests : IDisposable
     private readonly Mock<ILibraryManager> _libraryManagerMock;
     private readonly Mock<IProviderManager> _providerManagerMock;
     private readonly Mock<IFileSystem> _fileSystemMock;
+    private readonly Mock<IConfigurationService> _configServiceMock;
     private readonly MirrorService _service;
 
     public MirrorServiceCleanupTests()
@@ -695,8 +725,14 @@ public class MirrorServiceCleanupTests : IDisposable
         _libraryManagerMock = new Mock<ILibraryManager>();
         _providerManagerMock = new Mock<IProviderManager>();
         _fileSystemMock = new Mock<IFileSystem>();
+        _configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
         var logger = new Mock<ILogger<MirrorService>>();
-        _service = new MirrorService(_libraryManagerMock.Object, _providerManagerMock.Object, _fileSystemMock.Object, logger.Object);
+        _service = new MirrorService(
+            _libraryManagerMock.Object,
+            _providerManagerMock.Object,
+            _fileSystemMock.Object,
+            _configServiceMock.Object,
+            logger.Object);
     }
 
     public void Dispose() => _context.Dispose();
@@ -716,7 +752,6 @@ public class MirrorServiceCleanupTests : IDisposable
             targetLibraryId: targetId,
             targetPath: "/media/portuguese/movies");
 
-        // Simulate Jellyfin state: source library still exists, target library was deleted
         _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>
         {
             new()
@@ -729,20 +764,23 @@ public class MirrorServiceCleanupTests : IDisposable
             }
         });
 
+        // Setup removal
+        _configServiceMock.Setup(m => m.GetMirror(mirror.Id)).Returns(mirror);
+        _configServiceMock.Setup(m => m.RemoveMirror(mirror.Id))
+            .Callback(() => alternative.MirroredLibraries.Remove(mirror))
+            .Returns(true);
+
         // Act
         var result = await _service.CleanupOrphanedMirrorsAsync();
 
-        // Assert - mirror should be removed from configuration
+        // Assert
         result.TotalCleaned.Should().Be(1);
         result.CleanedUpMirrors.Should().ContainSingle()
             .Which.Should().Contain(mirror.TargetLibraryName)
             .And.Contain("mirror deleted");
 
         alternative.MirroredLibraries.Should().BeEmpty("orphaned mirror config should be removed");
-
-        // Source library still exists but now has no mirrors
-        result.SourcesWithoutMirrors.Should().ContainSingle()
-            .Which.Should().Be(sourceId);
+        result.SourcesWithoutMirrors.Should().ContainSingle().Which.Should().Be(sourceId);
     }
 
     [Fact]
@@ -754,7 +792,6 @@ public class MirrorServiceCleanupTests : IDisposable
 
         var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
 
-        // Use a real temp directory so we can verify deletion behavior
         var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_cleanup_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
 
@@ -765,36 +802,35 @@ public class MirrorServiceCleanupTests : IDisposable
             targetLibraryId: targetId,
             targetPath: tempDir);
 
-        // Simulate Jellyfin state: both source & target libraries missing
         _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>());
+
+        _configServiceMock.Setup(m => m.GetMirror(mirror.Id)).Returns(mirror);
+        _configServiceMock.Setup(m => m.RemoveMirror(mirror.Id))
+            .Callback(() => alternative.MirroredLibraries.Remove(mirror))
+            .Returns(true);
 
         // Act
         var result = await _service.CleanupOrphanedMirrorsAsync();
 
-        // Assert - mirror should be removed from configuration
+        // Assert
         result.TotalCleaned.Should().Be(1);
         result.CleanedUpMirrors.Should().ContainSingle()
             .Which.Should().Contain(mirror.TargetLibraryName)
             .And.Contain("source deleted");
 
         alternative.MirroredLibraries.Should().BeEmpty();
-
-        // Files for the mirror should be deleted when the source is gone
         Directory.Exists(tempDir).Should().BeFalse("mirror files should be deleted when source library is deleted");
     }
 
     [Fact]
     public async Task CleanupOrphanedMirrors_SourceDeleted_MirrorExists_DeletesMirrorLibraryInJellyfin()
     {
-        // Arrange - This tests the bug scenario:
-        // User deletes source library, but mirror library still exists in Jellyfin.
-        // The plugin should delete the mirror library from Jellyfin, not just the files.
+        // Arrange
         var sourceId = Guid.NewGuid();
         var targetId = Guid.NewGuid();
 
         var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
 
-        // Use a real temp directory so we can verify deletion behavior
         var tempDir = Path.Combine(Path.GetTempPath(), "polyglot_cleanup_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
 
@@ -805,7 +841,6 @@ public class MirrorServiceCleanupTests : IDisposable
             targetLibraryId: targetId,
             targetPath: tempDir);
 
-        // Simulate Jellyfin state: source library is missing, but target (mirror) library STILL exists
         _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>
         {
             new()
@@ -818,10 +853,15 @@ public class MirrorServiceCleanupTests : IDisposable
             }
         });
 
+        _configServiceMock.Setup(m => m.GetMirror(mirror.Id)).Returns(mirror);
+        _configServiceMock.Setup(m => m.RemoveMirror(mirror.Id))
+            .Callback(() => alternative.MirroredLibraries.Remove(mirror))
+            .Returns(true);
+
         // Act
         var result = await _service.CleanupOrphanedMirrorsAsync();
 
-        // Assert - mirror should be removed from configuration
+        // Assert
         result.TotalCleaned.Should().Be(1);
         result.CleanedUpMirrors.Should().ContainSingle()
             .Which.Should().Contain(mirror.TargetLibraryName)
@@ -829,14 +869,11 @@ public class MirrorServiceCleanupTests : IDisposable
 
         alternative.MirroredLibraries.Should().BeEmpty();
 
-        // Mirror library should be removed from Jellyfin
         _libraryManagerMock.Verify(
             m => m.RemoveVirtualFolder(mirror.TargetLibraryName, true),
             Times.Once,
             "Mirror library should be deleted from Jellyfin when source library is deleted");
 
-        // Files for the mirror should be deleted when the source is gone
         Directory.Exists(tempDir).Should().BeFalse("mirror files should be deleted when source library is deleted");
     }
 }
-
