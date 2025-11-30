@@ -10,6 +10,14 @@
     "repositoryUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot",
     "versions": [
       {
+        "version": "0.8.9.0",
+        "changelog": "## What's Changed\n\n### 🔧 Improvements\n- Enhance error handling in API interactions\n  - Added methods to extract and handle error messages from various API response formats\n  - Implemented error handling in `apiPost`, `apiPostJson`, `apiPut`, and `apiDelete` methods\n  - Ensured consistent error messaging across different API calls for better debugging and user feedback\n\n### 📝 Documentation\n- Update README and code examples for Spanish language support\n  - Changed references from Portuguese to Spanish in documentation\n  - Updated language code examples from \"pt-BR\" to \"es-ES\"\n  - Adjusted configuration placeholders and descriptions to reflect Spanish language settings\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.8.8...v0.8.9",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot/releases/download/v0.8.9/polyglot_0.8.9.0.zip",
+        "checksum": "24ab2c6fa9712786c6f36d09f5404b8e",
+        "timestamp": "2025-11-30T08:24:29Z"
+      },
+      {
         "version": "0.8.8.0",
         "changelog": "## What's Changed\n\n### ✨ New Features\n- Implement status polling for Languages tab in configuration page\n  - Added automatic polling for status updates every 5 seconds\n  - Introduced silent refresh mechanism to update UI without loading indicators\n  - Implemented visibility-based polling lifecycle using IntersectionObserver (polling stops when tab is not visible)\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.8.7...v0.8.8",
         "targetAbi": "10.10.0.0",
