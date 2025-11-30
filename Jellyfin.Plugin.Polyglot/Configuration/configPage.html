@@ -362,6 +362,11 @@
                 // Track initial settings values to detect changes
                 initialSettings: null,
                 initialLdapEnabled: null,
+                
+                // Polling for status updates
+                pollIntervalId: null,
+                pollIntervalMs: 5000, // Poll every 5 seconds
+                statusObserver: null,
 
                 // Custom API helpers for plugin-specific endpoints
                 apiGet: function(endpoint) {
@@ -1246,6 +1251,82 @@
                     });
                 },
 
+                // Silent refresh - updates status without showing loading indicator
+                refreshStatus: function() {
+                    var self = this;
+                    return this.apiGet('Polyglot/UIConfig').then(function(config) {
+                        // Update data
+                        self.libraries = config.Libraries || [];
+                        self.alternatives = config.Alternatives || [];
+                        self.users = config.Users || [];
+                        self.ldapStatus = config.LdapStatus || {};
+                        self.settings = config.Settings || {};
+                        
+                        // Re-render only the sections that show status
+                        self.renderLibraries();
+                        self.renderAlternatives();
+                        
+                        return config;
+                    }).catch(function(e) {
+                        // Silent fail for background refresh
+                        console.warn('Polyglot: Failed to refresh status:', e);
+                    });
+                },
+
+                startPolling: function() {
+                    var self = this;
+                    // Don't start if already polling
+                    if (this.pollIntervalId) {
+                        return;
+                    }
+                    
+                    console.log('Polyglot: Starting status polling');
+                    this.pollIntervalId = setInterval(function() {
+                        self.refreshStatus();
+                    }, this.pollIntervalMs);
+                },
+
+                stopPolling: function() {
+                    if (this.pollIntervalId) {
+                        console.log('Polyglot: Stopping status polling');
+                        clearInterval(this.pollIntervalId);
+                        this.pollIntervalId = null;
+                    }
+                },
+
+                setupStatusObserver: function() {
+                    var self = this;
+                    var languagesTab = document.getElementById('languagesTab');
+                    
+                    if (!languagesTab) {
+                        return;
+                    }
+                    
+                    // Clean up existing observer if any
+                    if (this.statusObserver) {
+                        this.statusObserver.disconnect();
+                    }
+                    
+                    // Use IntersectionObserver to detect when Languages tab is visible
+                    // This works because display:none elements have zero intersection
+                    this.statusObserver = new IntersectionObserver(function(entries) {
+                        entries.forEach(function(entry) {
+                            if (entry.isIntersecting && entry.intersectionRatio > 0) {
+                                // Tab is visible - start polling
+                                self.startPolling();
+                            } else {
+                                // Tab is hidden - stop polling
+                                self.stopPolling();
+                            }
+                        });
+                    }, {
+                        // Trigger when any part of the element is visible
+                        threshold: 0
+                    });
+                    
+                    this.statusObserver.observe(languagesTab);
+                },
+
                 init: function() {
                     var self = this;
                     
@@ -1340,11 +1421,23 @@
                         e.preventDefault();
                         self.saveSettings();
                     });
+
+                    // Set up status polling observer for the Languages tab
+                    this.setupStatusObserver();
                 }
             };
 
             document.getElementById('polyglotConfigPage').addEventListener('pageshow', function() {
                 PolyglotConfig.init();
+            });
+
+            // Clean up polling when navigating away from the page
+            document.getElementById('polyglotConfigPage').addEventListener('pagehide', function() {
+                PolyglotConfig.stopPolling();
+                if (PolyglotConfig.statusObserver) {
+                    PolyglotConfig.statusObserver.disconnect();
+                    PolyglotConfig.statusObserver = null;
+                }
             });
     </script>
 
