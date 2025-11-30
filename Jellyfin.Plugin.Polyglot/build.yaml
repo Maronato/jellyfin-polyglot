@@ -9,8 +9,8 @@ overview: "Multi-language metadata support through library mirroring with hardli
 description: |
   Serve your Jellyfin library in multiple languages without duplicating files.
   Creates language-specific mirror libraries using hardlinks, allowing different
-  users to see different metadata languages. Supports LDAP integration for
-  automatic language assignment based on group membership.
+  users to see different metadata languages. Supports automatic language
+  assignment for new users.
 category: "General"
 artifacts:
   - "Jellyfin.Plugin.Polyglot.dll"

@@ -38,7 +38,6 @@ public class PolyglotController : ControllerBase
     private readonly IMirrorService _mirrorService;
     private readonly IUserLanguageService _userLanguageService;
     private readonly ILibraryAccessService _libraryAccessService;
-    private readonly ILdapIntegrationService _ldapIntegrationService;
     private readonly IDebugReportService _debugReportService;
     private readonly IConfigurationService _configService;
     private readonly IUserManager _userManager;
@@ -53,7 +52,6 @@ public class PolyglotController : ControllerBase
         IMirrorService mirrorService,
         IUserLanguageService userLanguageService,
         ILibraryAccessService libraryAccessService,
-        ILdapIntegrationService ldapIntegrationService,
         IDebugReportService debugReportService,
         IConfigurationService configService,
         IUserManager userManager,
@@ -64,7 +62,6 @@ public class PolyglotController : ControllerBase
         _mirrorService = mirrorService;
         _userLanguageService = userLanguageService;
         _libraryAccessService = libraryAccessService;
-        _ldapIntegrationService = ldapIntegrationService;
         _debugReportService = debugReportService;
         _configService = configService;
         _userManager = userManager;
@@ -77,7 +74,7 @@ public class PolyglotController : ControllerBase
 
     /// <summary>
     /// Gets all configuration and data needed by the plugin UI in a single request.
-    /// This endpoint returns libraries, alternatives, users, cultures, countries, LDAP status, and settings.
+    /// This endpoint returns libraries, alternatives, users, cultures, countries, and settings.
     /// </summary>
     [HttpGet("UIConfig")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -108,21 +105,17 @@ public class PolyglotController : ControllerBase
             })
             .ToList();
 
-        var ldapStatus = _ldapIntegrationService.GetLdapStatus();
         var serverConfig = _serverConfigurationManager.Configuration;
 
         // Get all config data in one atomic read
         var configData = _configService.Read(c => new
         {
             Alternatives = c.LanguageAlternatives.ToList(),
-            LdapMappings = c.LdapGroupMappings.ToList(),
             ExcludedExtensions = c.ExcludedExtensions.ToList(),
             ExcludedDirectories = c.ExcludedDirectories.ToList(),
             c.AutoManageNewUsers,
             c.DefaultLanguageAlternativeId,
-            c.SyncMirrorsAfterLibraryScan,
-            c.EnableLdapIntegration,
-            c.FallbackOnLdapFailure
+            c.SyncMirrorsAfterLibraryScan
         });
 
         var response = new UIConfigResponse
@@ -132,7 +125,6 @@ public class PolyglotController : ControllerBase
             Users = users,
             Cultures = cultures,
             Countries = countries,
-            LdapStatus = ldapStatus,
             Settings = new UISettingsResponse
             {
                 AutoManageNewUsers = configData.AutoManageNewUsers,
@@ -141,10 +133,7 @@ public class PolyglotController : ControllerBase
                 ExcludedExtensions = configData.ExcludedExtensions,
                 ExcludedDirectories = configData.ExcludedDirectories,
                 DefaultExcludedExtensions = PluginConfiguration.DefaultExcludedExtensions.ToList(),
-                DefaultExcludedDirectories = PluginConfiguration.DefaultExcludedDirectories.ToList(),
-                EnableLdapIntegration = configData.EnableLdapIntegration,
-                FallbackOnLdapFailure = configData.FallbackOnLdapFailure,
-                LdapGroupMappings = configData.LdapMappings
+                DefaultExcludedDirectories = PluginConfiguration.DefaultExcludedDirectories.ToList()
             },
             ServerConfig = new ServerConfigInfo
             {
@@ -210,16 +199,6 @@ public class PolyglotController : ControllerBase
             if (settings.ExcludedDirectories != null)
             {
                 config.ExcludedDirectories = new HashSet<string>(settings.ExcludedDirectories, StringComparer.OrdinalIgnoreCase);
-            }
-
-            if (settings.EnableLdapIntegration.HasValue)
-            {
-                config.EnableLdapIntegration = settings.EnableLdapIntegration.Value;
-            }
-
-            if (settings.FallbackOnLdapFailure.HasValue)
-            {
-                config.FallbackOnLdapFailure = settings.FallbackOnLdapFailure.Value;
             }
 
             return true;
@@ -427,9 +406,6 @@ public class PolyglotController : ControllerBase
             {
                 c.DefaultLanguageAlternativeId = null;
             }
-
-            // Remove LDAP mappings for this alternative
-            c.LdapGroupMappings.RemoveAll(m => m.LanguageAlternativeId == id);
 
             return true;
         });
@@ -842,162 +818,6 @@ public class PolyglotController : ControllerBase
 
     #endregion
 
-    #region LDAP
-
-    /// <summary>
-    /// Gets LDAP integration status.
-    /// </summary>
-    [HttpGet("LdapStatus")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<LdapStatus> GetLdapStatus()
-    {
-        var status = _ldapIntegrationService.GetLdapStatus();
-        return Ok(status);
-    }
-
-    /// <summary>
-    /// Gets LDAP group mappings.
-    /// </summary>
-    [HttpGet("LdapGroups")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<IEnumerable<LdapGroupMapping>> GetLdapGroups()
-    {
-        var mappings = _configService.Read(c => c.LdapGroupMappings.ToList());
-        return Ok(mappings);
-    }
-
-    /// <summary>
-    /// Adds an LDAP group mapping.
-    /// </summary>
-    [HttpPost("LdapGroups")]
-    [ProducesResponseType(StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult<LdapGroupMapping> AddLdapGroupMapping([FromBody] AddLdapGroupMappingRequest request)
-    {
-        _logger.PolyglotDebug("AddLdapGroupMapping: Adding new mapping");
-
-        if (string.IsNullOrWhiteSpace(request.LdapGroupDn))
-        {
-            return BadRequest("LDAP group DN is required");
-        }
-
-        var alternative = _configService.Read(c => c.LanguageAlternatives.FirstOrDefault(a => a.Id == request.LanguageAlternativeId));
-        if (alternative == null)
-        {
-            return BadRequest("Language alternative not found");
-        }
-
-        var mapping = new LdapGroupMapping
-        {
-            Id = Guid.NewGuid(),
-            LdapGroupDn = request.LdapGroupDn,
-            LdapGroupName = request.LdapGroupName ?? request.LdapGroupDn,
-            LanguageAlternativeId = request.LanguageAlternativeId,
-            Priority = request.Priority
-        };
-
-        var added = _configService.Update(c =>
-        {
-            if (c.LdapGroupMappings.Any(m => string.Equals(m.LdapGroupDn, mapping.LdapGroupDn, StringComparison.OrdinalIgnoreCase)))
-            {
-                return false;
-            }
-
-            c.LdapGroupMappings.Add(mapping);
-            return true;
-        });
-
-        if (!added)
-        {
-            return BadRequest($"Failed to add LDAP mapping: either configuration is unavailable or a mapping for '{request.LdapGroupDn}' already exists");
-        }
-
-        _logger.PolyglotInfo("AddLdapGroupMapping: Added mapping for alternative {0}",
-            new LogAlternativeEntity(alternative.Id, alternative.Name, alternative.LanguageCode));
-
-        return CreatedAtAction(nameof(GetLdapGroups), null, mapping);
-    }
-
-    /// <summary>
-    /// Deletes an LDAP group mapping.
-    /// </summary>
-    [HttpDelete("LdapGroups/{id:guid}")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public IActionResult DeleteLdapGroupMapping(Guid id)
-    {
-        _logger.PolyglotDebug("DeleteLdapGroupMapping: Deleting LDAP mapping {0}", id);
-
-        var removed = _configService.Update(c =>
-        {
-            var count = c.LdapGroupMappings.RemoveAll(m => m.Id == id);
-            return count > 0;
-        });
-
-        if (!removed)
-        {
-            return NotFound();
-        }
-
-        _logger.PolyglotInfo("DeleteLdapGroupMapping: Deleted LDAP mapping {0}", id);
-
-        return NoContent();
-    }
-
-    /// <summary>
-    /// Tests LDAP connection and optionally looks up a user.
-    /// </summary>
-    [HttpPost("TestLdap")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<ActionResult<LdapTestResult>> TestLdap(
-        [FromQuery] string? username = null,
-        [FromBody] TestLdapRequest? request = null,
-        CancellationToken cancellationToken = default)
-    {
-        var result = await _ldapIntegrationService.TestConnectionAsync(username, cancellationToken);
-        return Ok(result);
-    }
-
-    #endregion
-
-    #region Settings
-
-    /// <summary>
-    /// Gets plugin settings.
-    /// </summary>
-    [HttpGet("Settings")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<PluginSettings> GetSettings()
-    {
-        var ldapEnabled = _configService.Read(c => c.EnableLdapIntegration);
-
-        return Ok(new PluginSettings
-        {
-            EnableLdapIntegration = ldapEnabled
-        });
-    }
-
-    /// <summary>
-    /// Updates plugin settings.
-    /// </summary>
-    [HttpPut("Settings")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public IActionResult UpdateSettings([FromBody] PluginSettings settings)
-    {
-        _logger.PolyglotDebug("UpdateSettings: Updating LDAP integration to {0}", settings.EnableLdapIntegration);
-
-        _configService.Update(c =>
-        {
-            c.EnableLdapIntegration = settings.EnableLdapIntegration;
-        });
-
-        _logger.PolyglotInfo("UpdateSettings: Settings updated");
-
-        return NoContent();
-    }
-
-    #endregion
-
     #region Debug
 
     /// <summary>
@@ -1145,56 +965,6 @@ public class EnableAllUsersResult
 }
 
 /// <summary>
-/// Request to add an LDAP group mapping.
-/// </summary>
-public class AddLdapGroupMappingRequest
-{
-    /// <summary>
-    /// Gets or sets the LDAP group DN.
-    /// </summary>
-    [Required]
-    public string LdapGroupDn { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the friendly group name.
-    /// </summary>
-    public string? LdapGroupName { get; set; }
-
-    /// <summary>
-    /// Gets or sets the language alternative ID.
-    /// </summary>
-    [Required]
-    public Guid LanguageAlternativeId { get; set; }
-
-    /// <summary>
-    /// Gets or sets the priority.
-    /// </summary>
-    public int Priority { get; set; }
-}
-
-/// <summary>
-/// Request to test LDAP.
-/// </summary>
-public class TestLdapRequest
-{
-    /// <summary>
-    /// Gets or sets the username to test.
-    /// </summary>
-    public string? Username { get; set; }
-}
-
-/// <summary>
-/// Plugin settings.
-/// </summary>
-public class PluginSettings
-{
-    /// <summary>
-    /// Gets or sets whether LDAP integration is enabled.
-    /// </summary>
-    public bool EnableLdapIntegration { get; set; }
-}
-
-/// <summary>
 /// Response containing the debug report in Markdown format.
 /// </summary>
 public class DebugReportResponse
@@ -1234,11 +1004,6 @@ public class UIConfigResponse
     /// Gets or sets the available countries.
     /// </summary>
     public List<CountryInfo> Countries { get; set; } = new();
-
-    /// <summary>
-    /// Gets or sets the LDAP integration status.
-    /// </summary>
-    public LdapStatus LdapStatus { get; set; } = new();
 
     /// <summary>
     /// Gets or sets the plugin settings.
@@ -1290,21 +1055,6 @@ public class UISettingsResponse
     /// Gets or sets the default excluded directories (read-only).
     /// </summary>
     public List<string> DefaultExcludedDirectories { get; set; } = new();
-
-    /// <summary>
-    /// Gets or sets a value indicating whether LDAP integration is enabled.
-    /// </summary>
-    public bool EnableLdapIntegration { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether to fall back to auto-assignment when LDAP lookup fails.
-    /// </summary>
-    public bool FallbackOnLdapFailure { get; set; }
-
-    /// <summary>
-    /// Gets or sets the LDAP group mappings.
-    /// </summary>
-    public List<LdapGroupMapping> LdapGroupMappings { get; set; } = new();
 }
 
 /// <summary>
@@ -1352,16 +1102,6 @@ public class UISettingsUpdateRequest
     /// Gets or sets the excluded directory names (replaces existing list).
     /// </summary>
     public List<string>? ExcludedDirectories { get; set; }
-
-    /// <summary>
-    /// Gets or sets whether LDAP integration is enabled.
-    /// </summary>
-    public bool? EnableLdapIntegration { get; set; }
-
-    /// <summary>
-    /// Gets or sets whether to fall back to auto-assignment when LDAP lookup fails.
-    /// </summary>
-    public bool? FallbackOnLdapFailure { get; set; }
 }
 
 /// <summary>

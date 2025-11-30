@@ -16,8 +16,8 @@ public interface IUserLanguageService
     /// </summary>
     /// <param name="userId">The user ID.</param>
     /// <param name="alternativeId">The language alternative ID (null to clear assignment).</param>
-    /// <param name="setBy">The source of the assignment ("admin", "ldap", "user-sync").</param>
-    /// <param name="manuallySet">Whether this is a manual override that blocks LDAP updates.</param>
+    /// <param name="setBy">The source of the assignment ("admin", "user-sync", "auto").</param>
+    /// <param name="manuallySet">Whether this is a manual override that blocks automatic updates.</param>
     /// <param name="isPluginManaged">Whether the plugin should manage this user's library access.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Task representing the async operation.</returns>
@@ -52,7 +52,7 @@ public interface IUserLanguageService
     IEnumerable<UserInfo> GetAllUsersWithLanguages();
 
     /// <summary>
-    /// Checks if a user's language was manually set (blocking LDAP updates).
+    /// Checks if a user's language was manually set (blocking automatic updates).
     /// </summary>
     /// <param name="userId">The user ID.</param>
     /// <returns>True if manually set.</returns>

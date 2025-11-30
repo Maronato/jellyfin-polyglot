@@ -121,7 +121,6 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 c.LanguageAlternatives.Clear();
                 c.UserLanguages.Clear();
-                c.LdapGroupMappings.Clear();
             });
 
             _logger.PolyglotInfo("Plugin OnUninstalling: Cleanup completed");

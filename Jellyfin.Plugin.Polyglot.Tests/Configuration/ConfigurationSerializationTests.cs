@@ -31,7 +31,6 @@ public class ConfigurationSerializationTests
         result.Should().NotBeNull();
         result.LanguageAlternatives.Should().NotBeNull();
         result.UserLanguages.Should().NotBeNull();
-        result.LdapGroupMappings.Should().NotBeNull();
     }
 
     /// <summary>
@@ -117,7 +116,7 @@ public class ConfigurationSerializationTests
                     SelectedAlternativeId = null, // No language assigned
                     ManuallySet = false,
                     SetAt = DateTime.UtcNow,
-                    SetBy = "ldap"
+                    SetBy = "auto"
                 }
             }
         };
@@ -140,48 +139,6 @@ public class ConfigurationSerializationTests
     }
 
     /// <summary>
-    /// Verifies that a configuration with LDAP group mappings can be serialized.
-    /// </summary>
-    [Fact]
-    public void Configuration_WithLdapGroupMappings_CanSerializeAndDeserialize()
-    {
-        // Arrange
-        var altId = Guid.NewGuid();
-        var config = new PluginConfiguration
-        {
-            EnableLdapIntegration = true,
-            LdapGroupMappings = new List<LdapGroupMapping>
-            {
-                new LdapGroupMapping
-                {
-                    Id = Guid.NewGuid(),
-                    LdapGroupDn = "CN=Portuguese Users,OU=Groups,DC=example,DC=com",
-                    LdapGroupName = "Portuguese Users",
-                    LanguageAlternativeId = altId,
-                    Priority = 100
-                },
-                new LdapGroupMapping
-                {
-                    Id = Guid.NewGuid(),
-                    LdapGroupDn = "CN=Spanish Users,OU=Groups,DC=example,DC=com",
-                    LdapGroupName = "Spanish Users",
-                    LanguageAlternativeId = Guid.NewGuid(),
-                    Priority = 50
-                }
-            }
-        };
-
-        // Act
-        var result = SerializeAndDeserialize(config);
-
-        // Assert
-        result.EnableLdapIntegration.Should().BeTrue();
-        result.LdapGroupMappings.Should().HaveCount(2);
-        result.LdapGroupMappings[0].LdapGroupDn.Should().Contain("Portuguese");
-        result.LdapGroupMappings[0].Priority.Should().Be(100);
-    }
-
-    /// <summary>
     /// Verifies that all boolean and primitive settings are preserved.
     /// </summary>
     [Fact]
@@ -190,7 +147,6 @@ public class ConfigurationSerializationTests
         // Arrange
         var config = new PluginConfiguration
         {
-            EnableLdapIntegration = true,
             UserReconciliationTime = "04:30"
         };
 
@@ -198,7 +154,6 @@ public class ConfigurationSerializationTests
         var result = SerializeAndDeserialize(config);
 
         // Assert
-        result.EnableLdapIntegration.Should().BeTrue();
         result.UserReconciliationTime.Should().Be("04:30");
     }
 
@@ -292,7 +247,6 @@ public class ConfigurationSerializationTests
 
         var config = new PluginConfiguration
         {
-            EnableLdapIntegration = true,
             AutoManageNewUsers = true,
             DefaultLanguageAlternativeId = portugueseAltId,
             UserReconciliationTime = "03:00",
@@ -347,17 +301,6 @@ public class ConfigurationSerializationTests
                     SetAt = DateTime.UtcNow,
                     SetBy = "admin"
                 }
-            },
-            LdapGroupMappings = new List<LdapGroupMapping>
-            {
-                new LdapGroupMapping
-                {
-                    Id = Guid.NewGuid(),
-                    LdapGroupDn = "CN=PT,DC=test",
-                    LdapGroupName = "PT Users",
-                    LanguageAlternativeId = portugueseAltId,
-                    Priority = 100
-                }
             }
         };
 
@@ -368,7 +311,6 @@ public class ConfigurationSerializationTests
         result.Should().NotBeNull();
         result.LanguageAlternatives.Should().HaveCount(2);
         result.UserLanguages.Should().HaveCount(1);
-        result.LdapGroupMappings.Should().HaveCount(1);
         
         // Verify nested data integrity
         var ptAlt = result.LanguageAlternatives.Find(a => a.Id == portugueseAltId);
@@ -504,15 +446,6 @@ public class ConfigurationSerializationTests
                         }
                     }
                 }
-            },
-            LdapGroupMappings = new List<LdapGroupMapping>
-            {
-                new LdapGroupMapping
-                {
-                    Id = Guid.NewGuid(),
-                    LdapGroupDn = "CN=Test\\, User,OU=Groups,DC=example,DC=com",
-                    LdapGroupName = "Test, User Group"
-                }
             }
         };
 
@@ -523,7 +456,6 @@ public class ConfigurationSerializationTests
         result.LanguageAlternatives[0].Name.Should().Be("Português & Español <test>");
         result.LanguageAlternatives[0].DestinationBasePath.Should().Be("/media/special chars/test's folder");
         result.LanguageAlternatives[0].MirroredLibraries[0].SourceLibraryName.Should().Be("Movies & TV \"Shows\"");
-        result.LdapGroupMappings[0].LdapGroupDn.Should().Contain("Test\\, User");
     }
 
     /// <summary>

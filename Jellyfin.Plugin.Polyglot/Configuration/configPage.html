@@ -14,7 +14,6 @@
                 <div class="tabs-viewmenubar" style="margin-bottom: 2em;">
                     <button is="emby-button" class="emby-tab-button emby-button-tab active" data-tab="languagesTab">Languages</button>
                     <button is="emby-button" class="emby-tab-button emby-button-tab" data-tab="usersTab">Users</button>
-                    <button is="emby-button" class="emby-tab-button emby-button-tab" data-tab="ldapTab" id="ldapTabButton" style="display: none;">LDAP</button>
                     <button is="emby-button" class="emby-tab-button emby-button-tab" data-tab="settingsTab">Settings</button>
             </div>
 
@@ -60,46 +59,6 @@
                     </div>
             </div>
 
-            <!-- LDAP Tab -->
-                <div id="ldapTab" class="tabContent" style="display: none;">
-                    <div class="verticalSection">
-                        <h3 class="sectionTitle">LDAP Status</h3>
-                        <div id="ldapStatus" class="paperList"></div>
-                    </div>
-
-                    <div class="verticalSection">
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input id="enableLdapIntegration" type="checkbox" is="emby-checkbox" />
-                                <span>Enable LDAP Integration</span>
-                            </label>
-                            <div class="fieldDescription">Automatically assign languages based on LDAP group membership.</div>
-                        </div>
-                </div>
-
-                    <div class="verticalSection">
-                        <div class="sectionTitleContainer flex align-items-center">
-                            <h3 class="sectionTitle">Group Mappings</h3>
-                            <button is="emby-button" type="button" class="fab submit" id="btnAddLdapMapping" style="margin-left: auto;">
-                                <span class="material-icons add"></span>
-                            </button>
-                    </div>
-                        <div id="ldapMappingsList" class="paperList"></div>
-                    </div>
-
-                    <div class="verticalSection">
-                        <button is="emby-button" type="button" class="raised" id="btnTestLdap">
-                            <span>Test LDAP Connection</span>
-                        </button>
-                    </div>
-
-                    <div class="verticalSection">
-                        <button is="emby-button" type="button" class="raised button-submit block emby-button" id="btnSaveLdapSettings">
-                            <span>Save LDAP Settings</span>
-                        </button>
-                </div>
-            </div>
-
             <!-- Settings Tab -->
                 <div id="settingsTab" class="tabContent" style="display: none;">
                     <form id="settingsForm">
@@ -114,7 +73,7 @@
                                     <input id="autoManageNewUsers" type="checkbox" is="emby-checkbox" />
                                     <span>Automatically manage new users</span>
                                 </label>
-                                <div class="fieldDescription">When enabled, newly created users will be automatically added to plugin management with the default language below. LDAP assignments (if enabled) take priority.</div>
+                                <div class="fieldDescription">When enabled, newly created users will be automatically added to plugin management with the default language below.</div>
                             </div>
                             
                             <div class="selectContainer" style="margin-bottom: 1em;">
@@ -315,37 +274,6 @@
             </div>
         </div>
 
-        <!-- Add LDAP Mapping Dialog -->
-        <div id="addLdapMappingDialog" class="dialog hide" style="display: none;">
-            <div class="dialogContent">
-                <h3>Add LDAP Group Mapping</h3>
-                <form id="addLdapMappingForm">
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="ldapGroupDn">Group DN</label>
-                        <input id="ldapGroupDn" type="text" is="emby-input" required placeholder="CN=Spanish Users,OU=Groups,DC=example,DC=com" />
-                </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="ldapGroupName">Group Name (optional)</label>
-                        <input id="ldapGroupName" type="text" is="emby-input" placeholder="Spanish Users" />
-                        <div class="fieldDescription">Friendly name, also used for CN matching</div>
-                </div>
-                    <div class="selectContainer">
-                        <label class="selectLabel" for="ldapLanguageAlt">Language Alternative</label>
-                        <select id="ldapLanguageAlt" is="emby-select"></select>
-                </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="ldapPriority">Priority</label>
-                        <input id="ldapPriority" type="number" is="emby-input" value="0" />
-                        <div class="fieldDescription">Higher priority wins when user is in multiple groups</div>
-                </div>
-                    <div class="formDialogFooter">
-                        <button is="emby-button" type="button" class="raised button-cancel" onclick="PolyglotConfig.closeDialog('addLdapMappingDialog')">Cancel</button>
-                        <button is="emby-button" type="submit" class="raised button-submit">Create Mapping</button>
-                </div>
-                </form>
-        </div>
-    </div>
-
         <script type="text/javascript">
             var PolyglotConfig = {
                 pluginUniqueId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
@@ -356,12 +284,10 @@
                 countries: [],
                 serverConfig: null,
                 settings: null,
-                ldapStatus: null,
                 initialized: false,
                 
                 // Track initial settings values to detect changes
                 initialSettings: null,
-                initialLdapEnabled: null,
                 
                 // Polling for status updates
                 pollIntervalId: null,
@@ -523,7 +449,6 @@
                         self.users = config.Users || [];
                         self.cultures = config.Cultures || [];
                         self.countries = config.Countries || [];
-                        self.ldapStatus = config.LdapStatus || {};
                         self.settings = config.Settings || {};
                         self.serverConfig = config.ServerConfig || {};
                         
@@ -531,7 +456,6 @@
                         self.renderLibraries();
                         self.renderAlternatives();
                         self.renderUsers();
-                        self.renderLdapStatus();
                         self.renderSettings();
                         self.populateLanguageDropdowns();
                         
@@ -673,59 +597,6 @@
                             html += '</div>';
                         });
                         document.getElementById('usersList').innerHTML = html || '<p class="fieldDescription">No users found.</p>';
-                },
-
-                renderLdapStatus: function() {
-                    var self = this;
-                    var status = this.ldapStatus;
-                    
-                    // Only show LDAP tab if plugin is installed
-                    var ldapTabButton = document.getElementById('ldapTabButton');
-                    if (status && status.IsPluginInstalled) {
-                        ldapTabButton.style.display = '';
-                        
-                        var html = '<div class="listItem"><div class="listItemBody">';
-                        html += '<div class="listItemBodyText">LDAP Plugin: ✓ Installed</div>';
-                        html += '<div class="listItemBodyText secondary">';
-                        html += 'Configured: ' + (status.IsConfigured ? '✓' : '✗');
-                        html += ' • Integration: ' + (status.IsIntegrationEnabled ? '✓ Enabled' : '✗ Disabled');
-                        if (status.ServerAddress) html += ' • Server: ' + status.ServerAddress;
-                        html += '</div>';
-                        html += '</div></div>';
-                        document.getElementById('ldapStatus').innerHTML = html;
-                        
-                        // Load the checkbox value from settings
-                        var ldapEnabled = this.settings.EnableLdapIntegration || false;
-                        document.getElementById('enableLdapIntegration').checked = ldapEnabled;
-                        
-                        // Store initial value for change detection
-                        this.initialLdapEnabled = ldapEnabled;
-                        
-                        // Render LDAP mappings
-                        this.renderLdapMappings();
-                    } else {
-                        ldapTabButton.style.display = 'none';
-                    }
-                },
-
-                renderLdapMappings: function() {
-                    var self = this;
-                    var mappings = this.settings.LdapGroupMappings || [];
-                        var html = '';
-                        mappings.forEach(function(mapping) {
-                            var altName = 'Unknown';
-                            self.alternatives.forEach(function(alt) {
-                                if (alt.Id === mapping.LanguageAlternativeId) altName = alt.Name;
-                            });
-                            html += '<div class="listItem">';
-                            html += '<div class="listItemBody" style="flex: 1;">';
-                            html += '<div class="listItemBodyText">' + (mapping.LdapGroupName || mapping.LdapGroupDn) + '</div>';
-                            html += '<div class="listItemBodyText secondary">→ ' + altName + ' (Priority: ' + mapping.Priority + ')</div>';
-                            html += '</div>';
-                            html += '<button is="emby-button" type="button" class="fab" onclick="PolyglotConfig.deleteLdapMapping(\'' + mapping.Id + '\')"><span class="material-icons delete"></span></button>';
-                            html += '</div>';
-                        });
-                        document.getElementById('ldapMappingsList').innerHTML = html || '<p class="fieldDescription">No LDAP group mappings configured.</p>';
                 },
 
                 renderSettings: function() {
@@ -982,60 +853,6 @@
                     });
                 },
 
-                createLdapMapping: function() {
-                    var self = this;
-                    var data = {
-                        LdapGroupDn: document.getElementById('ldapGroupDn').value,
-                        LdapGroupName: document.getElementById('ldapGroupName').value || null,
-                        LanguageAlternativeId: document.getElementById('ldapLanguageAlt').value,
-                        Priority: parseInt(document.getElementById('ldapPriority').value) || 0
-                    };
-                    Dashboard.showLoadingMsg();
-                    this.apiPost('Polyglot/LdapGroups', data).then(function() {
-                        self.closeDialog('addLdapMappingDialog');
-                        // Reload all data
-                        self.loadUIConfig();
-                    }).catch(function(e) {
-                        Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Failed to create LDAP mapping: ' + (e.message || 'Unknown error'));
-                    });
-                },
-
-                deleteLdapMapping: function(id) {
-                    var self = this;
-                    Dashboard.showLoadingMsg();
-                    this.apiDelete('Polyglot/LdapGroups/' + id).then(function() {
-                        // Reload all data
-                        self.loadUIConfig();
-                    }).catch(function(e) {
-                        Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Failed to delete LDAP mapping: ' + (e.message || 'Unknown error'));
-                    });
-                },
-
-                testLdapConnection: function() {
-                    var username = prompt('Enter username to test (optional):');
-                    Dashboard.showLoadingMsg();
-                    var url = 'Polyglot/TestLdap';
-                    if (username) {
-                        url += '?username=' + encodeURIComponent(username);
-                    }
-                    this.apiPost(url, {}).then(function(result) {
-                        Dashboard.hideLoadingMsg();
-                        var msg = result.Message;
-                        if (result.UserGroups && result.UserGroups.length > 0) {
-                            msg += '\n\nGroups: ' + result.UserGroups.join(', ');
-                        }
-                        if (result.MatchedLanguage) {
-                            msg += '\n\nMatched Language: ' + result.MatchedLanguage;
-                        }
-                        Dashboard.alert(msg);
-                    }).catch(function(e) {
-                        Dashboard.hideLoadingMsg();
-                        Dashboard.alert('LDAP test failed: ' + e.message);
-                    });
-                },
-
                 enableAllUsers: function() {
                     var self = this;
                     Dashboard.confirm(
@@ -1146,7 +963,6 @@
                         self.alternatives = config.Alternatives || [];
                         self.users = config.Users || [];
                         self.settings = config.Settings || {};
-                        self.ldapStatus = config.LdapStatus || {};
                         
                         // Update initial settings to the new saved values
                         self.initialSettings = {
@@ -1234,43 +1050,6 @@
 
                 currentDebugReport: null,
 
-                saveLdapSettings: function() {
-                    var self = this;
-                    var currentLdapEnabled = document.getElementById('enableLdapIntegration').checked;
-                    
-                    // Check if value has changed
-                    if (this.initialLdapEnabled !== null && currentLdapEnabled === this.initialLdapEnabled) {
-                        Dashboard.alert('No changes to save.');
-                        return;
-                    }
-                    
-                    Dashboard.showLoadingMsg();
-                    
-                    var updateRequest = {
-                        Settings: {
-                            EnableLdapIntegration: currentLdapEnabled
-                        }
-                    };
-                    
-                    this.apiPostJson('Polyglot/UIConfig', updateRequest).then(function(config) {
-                        // Update local state from response
-                        self.settings = config.Settings || {};
-                        self.ldapStatus = config.LdapStatus || {};
-                        
-                        // Update initial value for future change detection
-                        self.initialLdapEnabled = config.Settings.EnableLdapIntegration || false;
-                        
-                        // Re-render LDAP status to reflect changes
-                        self.renderLdapStatus();
-                        
-                        Dashboard.hideLoadingMsg();
-                        Dashboard.alert('LDAP settings saved successfully.');
-                    }).catch(function(e) {
-                        Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Failed to save LDAP settings: ' + (e.message || 'Unknown error'));
-                    });
-                },
-
                 populateLanguageDropdowns: function() {
                     var self = this;
                     var langSelect = document.getElementById('altLanguage');
@@ -1312,7 +1091,6 @@
                         self.libraries = config.Libraries || [];
                         self.alternatives = config.Alternatives || [];
                         self.users = config.Users || [];
-                        self.ldapStatus = config.LdapStatus || {};
                         self.settings = config.Settings || {};
                         
                         // Re-render only the sections that show status
@@ -1413,16 +1191,6 @@
                         self.browseForPath('mirrorTargetPath');
                     });
 
-                    // Add LDAP mapping button
-                    document.getElementById('btnAddLdapMapping').addEventListener('click', function() {
-                        var select = document.getElementById('ldapLanguageAlt');
-                        select.innerHTML = '';
-                        self.alternatives.forEach(function(alt) {
-                            select.innerHTML += '<option value="' + alt.Id + '">' + alt.Name + '</option>';
-                        });
-                        self.showDialog('addLdapMappingDialog');
-                    });
-
                     // Enable all users button
                     document.getElementById('btnEnableAllUsers').addEventListener('click', function() {
                         self.enableAllUsers();
@@ -1444,16 +1212,6 @@
                         document.getElementById('debugReportContainer').style.display = 'none';
                     });
 
-                    // Test LDAP button
-                    document.getElementById('btnTestLdap').addEventListener('click', function() {
-                        self.testLdapConnection();
-                    });
-
-                    // Save LDAP settings button
-                    document.getElementById('btnSaveLdapSettings').addEventListener('click', function() {
-                        self.saveLdapSettings();
-                    });
-
                     // Form submissions
                     document.getElementById('addAlternativeForm').addEventListener('submit', function(e) {
                         e.preventDefault();
@@ -1463,11 +1221,6 @@
                     document.getElementById('addMirrorForm').addEventListener('submit', function(e) {
                         e.preventDefault();
                         self.createMirror();
-                    });
-
-                    document.getElementById('addLdapMappingForm').addEventListener('submit', function(e) {
-                        e.preventDefault();
-                        self.createLdapMapping();
                     });
 
                     document.getElementById('settingsForm').addEventListener('submit', function(e) {

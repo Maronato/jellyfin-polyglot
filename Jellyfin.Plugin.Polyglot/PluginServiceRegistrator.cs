@@ -26,7 +26,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<IMirrorService, MirrorService>();
         serviceCollection.AddSingleton<IUserLanguageService, UserLanguageService>();
         serviceCollection.AddSingleton<ILibraryAccessService, LibraryAccessService>();
-        serviceCollection.AddSingleton<ILdapIntegrationService, LdapIntegrationService>();
         serviceCollection.AddSingleton<IDebugReportService, DebugReportService>();
 
         // Event consumers

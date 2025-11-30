@@ -28,7 +28,7 @@ public class UserLanguageConfig
 
     /// <summary>
     /// Gets or sets a value indicating whether this was manually set by admin.
-    /// If true, LDAP won't override.
+    /// If true, automatic assignments won't override.
     /// </summary>
     public bool ManuallySet { get; set; }
 
@@ -38,7 +38,7 @@ public class UserLanguageConfig
     public DateTime? SetAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the source of assignment: "ldap", "admin", "user-sync".
+    /// Gets or sets the source of assignment: "admin", "user-sync", "auto".
     /// </summary>
     public string? SetBy { get; set; }
 }

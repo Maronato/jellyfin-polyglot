@@ -329,46 +329,6 @@ public class ConfigurationServiceTests : IDisposable
             "DefaultLanguageAlternativeId should be preserved when deleting a non-default alternative");
     }
 
-    [Fact]
-    public void Update_RemoveAlternative_RemovesLdapMappings_ThatReferenceDeletedAlternative()
-    {
-        // Arrange
-        var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
-        var otherAlt = _context.AddLanguageAlternative("Spanish", "es-ES");
-
-        // Add LDAP mappings for both alternatives
-        _context.Configuration.LdapGroupMappings.Add(new LdapGroupMapping
-        {
-            Id = Guid.NewGuid(),
-            LdapGroupDn = "CN=Portuguese,DC=test",
-            LanguageAlternativeId = alternative.Id
-        });
-        _context.Configuration.LdapGroupMappings.Add(new LdapGroupMapping
-        {
-            Id = Guid.NewGuid(),
-            LdapGroupDn = "CN=Spanish,DC=test",
-            LanguageAlternativeId = otherAlt.Id
-        });
-
-        // Act
-        _service.Update(c =>
-        {
-            var toRemove = c.LanguageAlternatives.FirstOrDefault(a => a.Id == alternative.Id);
-            if (toRemove != null)
-            {
-                c.LanguageAlternatives.Remove(toRemove);
-                // Clean up dangling LDAP mappings
-                c.LdapGroupMappings.RemoveAll(m => m.LanguageAlternativeId == alternative.Id);
-            }
-        });
-
-        // Assert
-        _context.Configuration.LdapGroupMappings.Should().HaveCount(1,
-            "LDAP mapping for deleted alternative should be removed");
-        _context.Configuration.LdapGroupMappings.First().LanguageAlternativeId.Should().Be(otherAlt.Id,
-            "LDAP mapping for other alternative should remain");
-    }
-
     #endregion
 
     #region Update - Mirror Operations
@@ -476,78 +436,6 @@ public class ConfigurationServiceTests : IDisposable
 
     #endregion
 
-    #region LDAP Group Mapping Operations
-
-    [Fact]
-    public void Update_AddLdapGroupMapping_DuplicateGroupDn_CanRejectWithFalse()
-    {
-        // Arrange
-        var altId = _context.AddLanguageAlternative().Id;
-        _context.Configuration.LdapGroupMappings.Add(new LdapGroupMapping
-        {
-            Id = Guid.NewGuid(),
-            LdapGroupDn = "CN=Test,DC=example",
-            LanguageAlternativeId = altId
-        });
-
-        var duplicate = new LdapGroupMapping
-        {
-            Id = Guid.NewGuid(),
-            LdapGroupDn = "CN=Test,DC=example", // Same DN
-            LanguageAlternativeId = altId
-        };
-
-        // Act
-        var result = _service.Update(c =>
-        {
-            if (c.LdapGroupMappings.Any(m => string.Equals(m.LdapGroupDn, duplicate.LdapGroupDn, StringComparison.OrdinalIgnoreCase)))
-            {
-                return false; // Reject duplicate
-            }
-            c.LdapGroupMappings.Add(duplicate);
-            return true;
-        });
-
-        // Assert
-        result.Should().BeFalse("should reject duplicate group DN");
-    }
-
-    [Fact]
-    public void Update_AddLdapGroupMapping_DuplicateGroupDnCaseInsensitive_CanRejectWithFalse()
-    {
-        // Arrange
-        var altId = _context.AddLanguageAlternative().Id;
-        _context.Configuration.LdapGroupMappings.Add(new LdapGroupMapping
-        {
-            Id = Guid.NewGuid(),
-            LdapGroupDn = "CN=Test,DC=example",
-            LanguageAlternativeId = altId
-        });
-
-        var duplicate = new LdapGroupMapping
-        {
-            Id = Guid.NewGuid(),
-            LdapGroupDn = "cn=test,dc=EXAMPLE", // Different case
-            LanguageAlternativeId = altId
-        };
-
-        // Act
-        var result = _service.Update(c =>
-        {
-            if (c.LdapGroupMappings.Any(m => string.Equals(m.LdapGroupDn, duplicate.LdapGroupDn, StringComparison.OrdinalIgnoreCase)))
-            {
-                return false;
-            }
-            c.LdapGroupMappings.Add(duplicate);
-            return true;
-        });
-
-        // Assert
-        result.Should().BeFalse("should reject duplicate group DN case-insensitively");
-    }
-
-    #endregion
-
     #region ClearAllConfiguration
 
     [Fact]
@@ -558,30 +446,21 @@ public class ConfigurationServiceTests : IDisposable
         var sourceLibraryId = Guid.NewGuid();
         _context.AddMirror(alt, sourceLibraryId, "Movies");
         _context.AddUserLanguage(Guid.NewGuid(), alt.Id);
-        _context.Configuration.LdapGroupMappings.Add(new LdapGroupMapping
-        {
-            Id = Guid.NewGuid(),
-            LdapGroupDn = "CN=Test,DC=example",
-            LanguageAlternativeId = alt.Id
-        });
 
         // Verify setup
         _context.Configuration.LanguageAlternatives.Should().NotBeEmpty();
         _context.Configuration.UserLanguages.Should().NotBeEmpty();
-        _context.Configuration.LdapGroupMappings.Should().NotBeEmpty();
 
         // Act
         _service.Update(c =>
         {
             c.LanguageAlternatives.Clear();
             c.UserLanguages.Clear();
-            c.LdapGroupMappings.Clear();
         });
 
         // Assert
         _context.Configuration.LanguageAlternatives.Should().BeEmpty();
         _context.Configuration.UserLanguages.Should().BeEmpty();
-        _context.Configuration.LdapGroupMappings.Should().BeEmpty();
     }
 
     #endregion

@@ -86,7 +86,6 @@ public class PluginUninstallTests
         var alt = context.AddLanguageAlternative("Portuguese", "pt-BR", "/media/portuguese");
         context.AddMirror(alt, Guid.NewGuid(), "Movies");
         context.AddUserLanguage(Guid.NewGuid(), alt.Id);
-        context.AddLdapGroupMapping("cn=portuguese,ou=groups,dc=example,dc=com", alt.Id);
 
         context.MirrorServiceMock
             .Setup(m => m.DeleteMirrorAsync(
@@ -103,7 +102,6 @@ public class PluginUninstallTests
         // Assert: configuration should be cleared
         context.Configuration.LanguageAlternatives.Should().BeEmpty();
         context.Configuration.UserLanguages.Should().BeEmpty();
-        context.Configuration.LdapGroupMappings.Should().BeEmpty();
     }
 
     [Fact]

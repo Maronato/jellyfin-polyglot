@@ -3,7 +3,7 @@
     "guid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "Polyglot",
     "overview": "Multi-language metadata support through library mirroring with hardlinks.",
-    "description": "Serve your Jellyfin library in multiple languages without duplicating files. Creates language-specific mirror libraries using hardlinks, allowing different users to see different metadata languages. Supports LDAP integration for automatic language assignment based on group membership.",
+    "description": "Serve your Jellyfin library in multiple languages without duplicating files. Creates language-specific mirror libraries using hardlinks, allowing different users to see different metadata languages. Supports automatic language assignment for new users.",
     "owner": "Maronato",
     "category": "General",
     "imageUrl": "https://raw.githubusercontent.com/Maronato/jellyfin-plugin-polyglot/main/logo.png",

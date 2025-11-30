@@ -175,8 +175,6 @@ public class MirrorServiceFileOperationTests : IDisposable
     /// </summary>
     private static void CopyConfigTo(PluginConfig source, PluginConfig dest)
     {
-        dest.EnableLdapIntegration = source.EnableLdapIntegration;
-        dest.FallbackOnLdapFailure = source.FallbackOnLdapFailure;
         dest.AutoManageNewUsers = source.AutoManageNewUsers;
         dest.DefaultLanguageAlternativeId = source.DefaultLanguageAlternativeId;
         dest.SyncMirrorsAfterLibraryScan = source.SyncMirrorsAfterLibraryScan;
@@ -185,7 +183,6 @@ public class MirrorServiceFileOperationTests : IDisposable
         dest.ExcludedDirectories = source.ExcludedDirectories;
         dest.LanguageAlternatives = source.LanguageAlternatives;
         dest.UserLanguages = source.UserLanguages;
-        dest.LdapGroupMappings = source.LdapGroupMappings;
     }
 
     private void SetupMirrorConfig(LibraryMirror mirror, LanguageAlternative? alternative = null)

@@ -127,12 +127,12 @@ public class UserLanguageServiceTests : IDisposable
     }
 
     [Fact]
-    public void IsManuallySet_LdapAssignment_ReturnsFalse()
+    public void IsManuallySet_AutomaticAssignment_ReturnsFalse()
     {
         // Arrange
         var userId = Guid.NewGuid();
         var alternative = _context.AddLanguageAlternative();
-        _context.AddUserLanguage(userId, alternative.Id, manuallySet: false, setBy: "ldap");
+        _context.AddUserLanguage(userId, alternative.Id, manuallySet: false, setBy: "auto");
 
         // Act
         var result = _service.IsManuallySet(userId);
@@ -258,10 +258,10 @@ public class UserLanguageServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AssignLanguageAsync_LdapOverManual_DoesNotOverride()
+    public async Task AssignLanguageAsync_AutoOverManual_DoesNotOverride()
     {
         // DESIRED BEHAVIOR: If a user was manually set to a language,
-        // LDAP should NOT override it (manual takes priority).
+        // automatic assignments should NOT override it (manual takes priority).
         
         // Arrange
         var userId = Guid.NewGuid();
@@ -274,15 +274,13 @@ public class UserLanguageServiceTests : IDisposable
         // First, set manually
         await _service.AssignLanguageAsync(userId, portuguese.Id, "admin", manuallySet: true);
 
-        // Act - Try to override with LDAP (manuallySet: false)
-        // Note: The actual LDAP override prevention is in LdapIntegrationService,
-        // but we verify IsManuallySet is checked correctly
+        // Act - Check if the manual flag is preserved correctly
         var isManual = _service.IsManuallySet(userId);
 
         // Assert - User should still be marked as manually set
         isManual.Should().BeTrue("manual assignment should be respected");
         
-        // The caller (LdapIntegrationService) should check IsManuallySet before calling AssignLanguageAsync
+        // Any automatic assignment caller should check IsManuallySet before calling AssignLanguageAsync
         // This test documents that the flag is preserved correctly
     }
 

@@ -22,22 +22,9 @@ public class PluginConfiguration : BasePluginConfiguration
     {
         LanguageAlternatives = new List<LanguageAlternative>();
         UserLanguages = new List<UserLanguageConfig>();
-        LdapGroupMappings = new List<LdapGroupMapping>();
         ExcludedExtensions = FileClassifier.DefaultExcludedExtensions;
         ExcludedDirectories = FileClassifier.DefaultExcludedDirectories;
     }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether LDAP integration is enabled.
-    /// </summary>
-    public bool EnableLdapIntegration { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether to fall back to auto-assignment when LDAP lookup fails.
-    /// When true (default), users are assigned the default language if LDAP lookup fails (maintains backward compatibility).
-    /// When false, users remain unassigned if LDAP lookup fails, requiring manual assignment.
-    /// </summary>
-    public bool FallbackOnLdapFailure { get; set; } = true;
 
     /// <summary>
     /// Gets or sets a value indicating whether new users should be automatically managed by the plugin.
@@ -67,11 +54,6 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the per-user language assignments.
     /// </summary>
     public List<UserLanguageConfig> UserLanguages { get; set; }
-
-    /// <summary>
-    /// Gets or sets the LDAP group to language mappings.
-    /// </summary>
-    public List<LdapGroupMapping> LdapGroupMappings { get; set; }
 
     /// <summary>
     /// Gets or sets the time for daily user reconciliation task (in 24-hour format, e.g., "03:00").

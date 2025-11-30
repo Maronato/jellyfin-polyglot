@@ -28,24 +28,17 @@ Polyglot is a Jellyfin plugin that creates "mirror" libraries using filesystem h
 │  │                    │                             │                         │    │ │
 │  │                    ▼                             ▼                         ▼    │ │
 │  │   ┌────────────────────────┐  ┌────────────────────────┐  ┌──────────────────┐  │ │
-│  │   │    MirrorService       │  │  UserLanguageService   │  │LdapIntegration-  │  │ │
-│  │   │                        │  │                        │  │    Service       │  │ │
+│  │   │    MirrorService       │  │  UserLanguageService   │  │ LibraryAccess-   │  │ │
+│  │   │                        │  │                        │  │   Service        │  │ │
 │  │   │ • CreateMirrorAsync    │  │ • AssignLanguageAsync  │  │                  │  │ │
-│  │   │ • SyncMirrorAsync      │  │ • GetUserLanguage      │  │ • GetUserGroups  │  │ │
-│  │   │ • DeleteMirrorAsync    │  │ • ClearLanguageAsync   │  │ • DetermineLangu-│  │ │
-│  │   │ • CleanupOrphans       │  │ • RemoveUser           │  │   ageFromGroups  │  │ │
+│  │   │ • SyncMirrorAsync      │  │ • GetUserLanguage      │  │ • GetExpected-   │  │ │
+│  │   │ • DeleteMirrorAsync    │  │ • ClearLanguageAsync   │  │   Access         │  │ │
+│  │   │ • CleanupOrphans       │  │ • RemoveUser           │  │ • UpdateUser-    │  │ │
+│  │   │                        │  │                        │  │   Access         │  │ │
 │  │   └───────────┬────────────┘  └───────────┬────────────┘  └────────┬─────────┘  │ │
 │  │               │                           │                        │            │ │
-│  │               │                           ▼                        │            │ │
-│  │               │              ┌────────────────────────┐            │            │ │
-│  │               │              │  LibraryAccessService  │            │            │ │
-│  │               │              │                        │            │            │ │
-│  │               │              │ • GetExpectedAccess    │◄───────────┘            │ │
-│  │               │              │ • UpdateUserAccess     │                         │ │
-│  │               │              │ • ReconcileAllUsers    │                         │ │
-│  │               │              └───────────┬────────────┘                         │ │
-│  │               │                          │                                      │ │
-│  │               ▼                          ▼                                      │ │
+│  │               │                           │                        │            │ │
+│  │               ▼                           ▼                        ▼            │ │
 │  │   ┌─────────────────────────────────────────────────────────────────────────┐   │ │
 │  │   │                         JELLYFIN APIs                                   │   │ │
 │  │   │  ILibraryManager  │  IUserManager  │  IProviderManager  │  IFileSystem  │   │ │
@@ -57,8 +50,8 @@ Polyglot is a Jellyfin plugin that creates "mirror" libraries using filesystem h
 │  │  │ UserCreated      │  │ UserDeleted      │  │ LibraryChanged             │     │ │
 │  │  │ Consumer         │  │ Consumer         │  │ Consumer                   │     │ │
 │  │  │                  │  │                  │  │                            │     │ │
-│  │  │ LDAP lookup ───► │  │ Cleanup config   │  │ ItemRemoved ──► Cleanup    │     │ │
-│  │  │ Auto-assign lang │  │                  │  │ orphaned mirrors           │     │ │
+│  │  │ Auto-assign      │  │ Cleanup config   │  │ ItemRemoved ──► Cleanup    │     │ │
+│  │  │ default language │  │                  │  │ orphaned mirrors           │     │ │
 │  │  └──────────────────┘  └──────────────────┘  └────────────────────────────┘     │ │
 │  │                                                                                 │ │
 │  ├─────────────────────────────────────────────────────────────────────────────────┤ │
@@ -203,29 +196,25 @@ User assigned to "Spanish" language
 │                    EXTERNAL DEPENDENCIES                            │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  ┌──────────────────────────┐     ┌───────────────────────────────┐ │
-│  │  jellyfin-plugin-ldapauth│     │     Operating System          │ │
-│  │  (Optional)              │     │                               │ │
-│  │                          │     │  ┌─────────────────────────┐  │ │
-│  │  Plugin ID:              │     │  │ Windows: kernel32.dll   │  │ │
-│  │  958aad66-3784-4f94-...  │     │  │   CreateHardLink()      │  │ │
-│  │                          │     │  ├─────────────────────────┤  │ │
-│  │  Polyglot reads config   │     │  │ Unix: libc              │  │ │
-│  │  via REFLECTION:         │     │  │   link()                │  │ │
-│  │  • LdapServer            │     │  └─────────────────────────┘  │ │
-│  │  • LdapBaseDn            │     │                               │ │
-│  │  • LdapBindUser          │     │  Filesystem must support      │ │
-│  │  • LdapSearchFilter      │     │  hardlinks (ext4, NTFS,       │ │
-│  │                          │     │  APFS, XFS, btrfs, ZFS)       │ │
-│  └──────────────────────────┘     └───────────────────────────────┘ │
-│              │                                    │                 │
-│              ▼                                    ▼                 │
-│  ┌──────────────────────────┐     ┌──────────────────────────────┐  │
-│  │ LdapIntegrationService   │     │    FileSystemHelper          │  │
-│  │                          │     │                              │  │
-│  │ Queries LDAP server for  │     │ P/Invoke calls for           │  │
-│  │ user's memberOf groups   │     │ native hardlink creation     │  │
-│  └──────────────────────────┘     └──────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                    Operating System                            │  │
+│  │                                                                │  │
+│  │  ┌────────────────────────┐  ┌────────────────────────┐       │  │
+│  │  │ Windows: kernel32.dll  │  │ Unix: libc             │       │  │
+│  │  │   CreateHardLink()     │  │   link()               │       │  │
+│  │  └────────────────────────┘  └────────────────────────┘       │  │
+│  │                                                                │  │
+│  │  Filesystem must support hardlinks (ext4, NTFS, APFS,         │  │
+│  │  XFS, btrfs, ZFS)                                             │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                   │                                 │
+│                                   ▼                                 │
+│             ┌──────────────────────────────────────────┐            │
+│             │          FileSystemHelper                │            │
+│             │                                          │            │
+│             │ P/Invoke calls for native hardlink       │            │
+│             │ creation on Windows and Unix             │            │
+│             └──────────────────────────────────────────┘            │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -238,10 +227,10 @@ Jellyfin.Plugin.Polyglot/
 │   └── PolyglotController.cs        # REST API (admin-only endpoints)
 ├── Configuration/
 │   ├── PluginConfiguration.cs       # Persisted settings model
-│   └── configPage.html              # Admin UI (4 tabs: Languages, Users, LDAP, Settings)
+│   └── configPage.html              # Admin UI (3 tabs: Languages, Users, Settings)
 ├── EventConsumers/
 │   ├── LibraryChangedConsumer.cs    # Detects library deletions → cleanup orphans
-│   ├── UserCreatedConsumer.cs       # LDAP/auto-assign on new user
+│   ├── UserCreatedConsumer.cs       # Auto-assign language on new user
 │   └── UserDeletedConsumer.cs       # Cleanup user config on deletion
 ├── Helpers/
 │   ├── FileClassifier.cs            # Decides what to hardlink vs skip
@@ -253,7 +242,6 @@ Jellyfin.Plugin.Polyglot/
 │   ├── UserLanguageConfig.cs        # Per-user language assignment
 │   ├── UserInfo.cs                  # API response model
 │   ├── LibraryInfo.cs               # API response model
-│   ├── LdapGroupMapping.cs          # LDAP group → language mapping
 │   └── SyncStatus.cs                # Enum: Pending, Syncing, Synced, Error
 ├── Services/
 │   ├── IMirrorService.cs            # Interface
@@ -262,8 +250,6 @@ Jellyfin.Plugin.Polyglot/
 │   ├── UserLanguageService.cs       # Language assignment management
 │   ├── ILibraryAccessService.cs     # Interface
 │   ├── LibraryAccessService.cs      # User permission calculations
-│   ├── ILdapIntegrationService.cs   # Interface
-│   ├── LdapIntegrationService.cs    # LDAP group queries via reflection
 │   ├── IDebugReportService.cs       # Interface
 │   └── DebugReportService.cs        # Diagnostic report generation
 ├── Tasks/
@@ -313,14 +299,6 @@ Task<bool> ReconcileUserAccessAsync(userId, ct)
 -   Sources without mirror in user's language: ✅ included
 -   Non-managed libraries: preserved (not touched)
 
-### LdapIntegrationService
-
-Integrates with jellyfin-plugin-ldapauth without a direct dependency:
-
--   Reads LDAP config via **reflection** (plugin ID: `958aad66-3784-4f94-b0db-ff87df5c155e`)
--   Queries `memberOf` attribute and extracts CN from DN
--   Matches groups to language mappings by priority (highest wins)
-
 ### DebugReportService
 
 Generates troubleshooting reports with optional anonymization:
@@ -345,29 +323,26 @@ Exclusions are configurable in plugin settings.
 
 All endpoints require admin privileges (`[Authorize(Policy = "RequiresElevation")]`):
 
-| Method          | Endpoint                                           | Description                       |
-| --------------- | -------------------------------------------------- | --------------------------------- |
-| GET             | `/Polyglot/Libraries`                              | List Jellyfin libraries           |
-| GET/POST        | `/Polyglot/Alternatives`                           | List/create language alternatives |
-| DELETE          | `/Polyglot/Alternatives/{id}`                      | Delete alternative + mirrors      |
-| POST            | `/Polyglot/Alternatives/{id}/Libraries`            | Add mirror to alternative         |
-| DELETE          | `/Polyglot/Alternatives/{id}/Libraries/{sourceId}` | Delete mirror                     |
-| POST            | `/Polyglot/Alternatives/{id}/Sync`                 | Trigger sync                      |
-| GET             | `/Polyglot/Users`                                  | List users with assignments       |
-| PUT             | `/Polyglot/Users/{id}/Language`                    | Set user language                 |
-| POST            | `/Polyglot/Users/EnableAll`                        | Enable plugin for all users       |
-| GET             | `/Polyglot/LdapStatus`                             | Get LDAP integration status       |
-| GET/POST/DELETE | `/Polyglot/LdapGroups`                             | Manage LDAP mappings              |
-| POST            | `/Polyglot/TestLdap`                               | Test LDAP connection              |
-| GET             | `/Polyglot/DebugReport`                            | Generate debug report             |
+| Method   | Endpoint                                           | Description                       |
+| -------- | -------------------------------------------------- | --------------------------------- |
+| GET      | `/Polyglot/Libraries`                              | List Jellyfin libraries           |
+| GET/POST | `/Polyglot/Alternatives`                           | List/create language alternatives |
+| DELETE   | `/Polyglot/Alternatives/{id}`                      | Delete alternative + mirrors      |
+| POST     | `/Polyglot/Alternatives/{id}/Libraries`            | Add mirror to alternative         |
+| DELETE   | `/Polyglot/Alternatives/{id}/Libraries/{sourceId}` | Delete mirror                     |
+| POST     | `/Polyglot/Alternatives/{id}/Sync`                 | Trigger sync                      |
+| GET      | `/Polyglot/Users`                                  | List users with assignments       |
+| PUT      | `/Polyglot/Users/{id}/Language`                    | Set user language                 |
+| POST     | `/Polyglot/Users/EnableAll`                        | Enable plugin for all users       |
+| GET      | `/Polyglot/DebugReport`                            | Generate debug report             |
 
 ## Event Consumers
 
-| Consumer                 | Trigger              | Action                                                            |
-| ------------------------ | -------------------- | ----------------------------------------------------------------- |
-| `UserCreatedConsumer`    | New user created     | Check LDAP groups → assign language, or apply auto-manage default |
-| `UserDeletedConsumer`    | User deleted         | Remove from `UserLanguages` config                                |
-| `LibraryChangedConsumer` | Library item removed | Cleanup orphaned mirrors, reconcile user access                   |
+| Consumer                 | Trigger              | Action                                          |
+| ------------------------ | -------------------- | ----------------------------------------------- |
+| `UserCreatedConsumer`    | New user created     | Apply auto-manage default language if enabled   |
+| `UserDeletedConsumer`    | User deleted         | Remove from `UserLanguages` config              |
+| `LibraryChangedConsumer` | Library item removed | Cleanup orphaned mirrors, reconcile user access |
 
 ## Scheduled Tasks
 

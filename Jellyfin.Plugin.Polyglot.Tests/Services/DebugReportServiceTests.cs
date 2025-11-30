@@ -107,7 +107,6 @@ public class DebugReportServiceTests : IDisposable
         // Arrange
         _context.Configuration.AutoManageNewUsers = true;
         _context.Configuration.SyncMirrorsAfterLibraryScan = false;
-        _context.Configuration.EnableLdapIntegration = true;
 
         // Act
         var report = await _service.GenerateReportAsync();
@@ -115,7 +114,6 @@ public class DebugReportServiceTests : IDisposable
         // Assert
         report.Configuration.AutoManageNewUsers.Should().BeTrue();
         report.Configuration.SyncAfterLibraryScan.Should().BeFalse();
-        report.Configuration.LdapIntegrationEnabled.Should().BeTrue();
     }
 
     [Fact]

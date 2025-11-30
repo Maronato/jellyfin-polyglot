@@ -102,22 +102,6 @@ public static class MockFactory
     }
 
     /// <summary>
-    /// Creates a mock ILdapIntegrationService.
-    /// </summary>
-    public static Mock<ILdapIntegrationService> CreateLdapIntegrationService(bool isAvailable = false)
-    {
-        var mock = new Mock<ILdapIntegrationService>();
-        mock.Setup(m => m.IsLdapPluginAvailable()).Returns(isAvailable);
-        mock.Setup(m => m.GetLdapStatus()).Returns(new LdapStatus
-        {
-            IsPluginInstalled = isAvailable,
-            IsConfigured = isAvailable,
-            IsIntegrationEnabled = isAvailable
-        });
-        return mock;
-    }
-
-    /// <summary>
     /// Helper method to clone config using JSON serialization (matches real ConfigurationService).
     /// </summary>
     private static PluginConfiguration Clone(PluginConfiguration config)
@@ -174,8 +158,6 @@ public static class MockFactory
     /// </summary>
     private static void CopyConfigTo(PluginConfiguration source, PluginConfiguration dest)
     {
-        dest.EnableLdapIntegration = source.EnableLdapIntegration;
-        dest.FallbackOnLdapFailure = source.FallbackOnLdapFailure;
         dest.AutoManageNewUsers = source.AutoManageNewUsers;
         dest.DefaultLanguageAlternativeId = source.DefaultLanguageAlternativeId;
         dest.SyncMirrorsAfterLibraryScan = source.SyncMirrorsAfterLibraryScan;
@@ -184,7 +166,6 @@ public static class MockFactory
         dest.ExcludedDirectories = source.ExcludedDirectories;
         dest.LanguageAlternatives = source.LanguageAlternatives;
         dest.UserLanguages = source.UserLanguages;
-        dest.LdapGroupMappings = source.LdapGroupMappings;
     }
 
     /// <summary>
@@ -277,36 +258,14 @@ public static class MockFactory
     }
 
     /// <summary>
-    /// Creates a sample LdapGroupMapping.
-    /// </summary>
-    public static LdapGroupMapping CreateLdapGroupMapping(
-        Guid? id = null,
-        string ldapGroupDn = "CN=Portuguese Users,OU=Groups,DC=example,DC=com",
-        string ldapGroupName = "Portuguese Users",
-        Guid? languageAlternativeId = null,
-        int priority = 100)
-    {
-        return new LdapGroupMapping
-        {
-            Id = id ?? Guid.NewGuid(),
-            LdapGroupDn = ldapGroupDn,
-            LdapGroupName = ldapGroupName,
-            LanguageAlternativeId = languageAlternativeId ?? Guid.NewGuid(),
-            Priority = priority
-        };
-    }
-
-    /// <summary>
     /// Creates a sample PluginConfiguration.
     /// </summary>
     public static PluginConfiguration CreatePluginConfiguration()
     {
         return new PluginConfiguration
         {
-            EnableLdapIntegration = false,
             LanguageAlternatives = new List<LanguageAlternative>(),
-            UserLanguages = new List<UserLanguageConfig>(),
-            LdapGroupMappings = new List<LdapGroupMapping>()
+            UserLanguages = new List<UserLanguageConfig>()
         };
     }
 }

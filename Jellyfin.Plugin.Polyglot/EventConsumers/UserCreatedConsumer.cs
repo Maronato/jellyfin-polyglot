@@ -12,13 +12,12 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.Polyglot.EventConsumers;
 
 /// <summary>
-/// Handles user creation events to potentially assign language based on LDAP groups.
+/// Handles user creation events to potentially assign default language.
 /// Uses IConfigurationService for all config access.
 /// </summary>
 public class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
 {
     private readonly IUserLanguageService _userLanguageService;
-    private readonly ILdapIntegrationService _ldapIntegrationService;
     private readonly IConfigurationService _configService;
     private readonly ILogger<UserCreatedConsumer> _logger;
 
@@ -27,12 +26,10 @@ public class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
     /// </summary>
     public UserCreatedConsumer(
         IUserLanguageService userLanguageService,
-        ILdapIntegrationService ldapIntegrationService,
         IConfigurationService configService,
         ILogger<UserCreatedConsumer> logger)
     {
         _userLanguageService = userLanguageService;
-        _ldapIntegrationService = ldapIntegrationService;
         _configService = configService;
         _logger = logger;
     }
@@ -45,85 +42,13 @@ public class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
         _logger.PolyglotInfo("UserCreatedConsumer: User created: {0}", userEntity);
 
         // Get config values in one atomic read
-        var (ldapEnabled, fallbackOnLdapFailure, autoManageNewUsers, defaultLanguageAlternativeId) = _configService.Read(c =>
-            (c.EnableLdapIntegration, c.FallbackOnLdapFailure, c.AutoManageNewUsers, c.DefaultLanguageAlternativeId));
-
-        // First, try LDAP-based assignment if enabled
-        bool ldapLookupFailed = false;
-        if (ldapEnabled && _ldapIntegrationService.IsLdapPluginAvailable())
-        {
-            try
-            {
-                var languageId = await _ldapIntegrationService.DetermineLanguageFromGroupsAsync(
-                    user.Username, CancellationToken.None).ConfigureAwait(false);
-
-                if (languageId.HasValue)
-                {
-                    await _userLanguageService.AssignLanguageAsync(
-                        user.Id,
-                        languageId.Value,
-                        "ldap",
-                        manuallySet: false,
-                        isPluginManaged: true,
-                        CancellationToken.None).ConfigureAwait(false);
-
-                    // Get language alternative for logging
-                    var alt = _configService.Read(c => c.LanguageAlternatives.FirstOrDefault(a => a.Id == languageId.Value));
-                    if (alt != null)
-                    {
-                        _logger.PolyglotInfo(
-                            "UserCreatedConsumer: Assigned language {0} to new user {1} via LDAP",
-                            new LogAlternative(alt.Id, alt.Name, alt.LanguageCode),
-                            userEntity);
-                    }
-                    else
-                    {
-                        _logger.PolyglotInfo(
-                            "UserCreatedConsumer: Assigned language {0} to new user {1} via LDAP",
-                            _configService.CreateLogAlternative(languageId.Value),
-                            userEntity);
-                    }
-
-                    return;
-                }
-
-                _logger.PolyglotDebug("UserCreatedConsumer: No LDAP group match for new user {0}", userEntity);
-            }
-            catch (Exception ex)
-            {
-                // LDAP lookup failed - behavior depends on FallbackOnLdapFailure setting
-                _logger.PolyglotError(ex,
-                    "UserCreatedConsumer: Failed to check LDAP for user {0}.",
-                    userEntity);
-                ldapLookupFailed = true;
-            }
-        }
-
-        // Fall back to auto-manage if enabled, but check LDAP failure behavior setting
-        // When FallbackOnLdapFailure is false, we don't auto-assign on LDAP failure
-        // to avoid assigning the wrong language when LDAP should have determined it
-        if (ldapLookupFailed && !fallbackOnLdapFailure)
-        {
-            _logger.PolyglotWarning(
-                "UserCreatedConsumer: Skipping auto-assign for user {0} due to LDAP lookup failure. " +
-                "Set 'FallbackOnLdapFailure' to true in settings to auto-assign despite LDAP errors.",
-                userEntity);
-            return;
-        }
+        var (autoManageNewUsers, defaultLanguageAlternativeId) = _configService.Read(c =>
+            (c.AutoManageNewUsers, c.DefaultLanguageAlternativeId));
 
         if (autoManageNewUsers)
         {
             try
             {
-                // Log warning only when we're actually going to assign (AutoManageNewUsers is true)
-                if (ldapLookupFailed && fallbackOnLdapFailure)
-                {
-                    _logger.PolyglotWarning(
-                        "UserCreatedConsumer: LDAP lookup failed for user {0}, falling back to auto-assignment. " +
-                        "Set 'FallbackOnLdapFailure' to false to require manual assignment on LDAP errors.",
-                        userEntity);
-                }
-
                 await _userLanguageService.AssignLanguageAsync(
                     user.Id,
                     defaultLanguageAlternativeId,
@@ -161,14 +86,6 @@ public class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
             {
                 _logger.PolyglotError(ex, "UserCreatedConsumer: Failed to auto-assign for user {0}", userEntity);
             }
-        }
-        else if (ldapLookupFailed && fallbackOnLdapFailure)
-        {
-            // FallbackOnLdapFailure is enabled (default) but AutoManageNewUsers is disabled
-            // Log to clarify that no assignment occurred despite the fallback setting
-            _logger.PolyglotDebug(
-                "UserCreatedConsumer: User {0} was not auto-assigned because AutoManageNewUsers is disabled.",
-                userEntity);
         }
     }
 }

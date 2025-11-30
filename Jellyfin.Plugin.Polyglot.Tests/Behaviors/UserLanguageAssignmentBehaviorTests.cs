@@ -167,13 +167,13 @@ public class UserLanguageAssignmentBehaviorTests : IDisposable
 
     #endregion
 
-    #region Behavior: Manual vs LDAP assignments
+    #region Behavior: Manual vs automatic assignments
 
     [Fact]
     public async Task ManualAssignment_ShouldBeMarkedAsManual()
     {
         // Scenario: When an admin manually assigns a language via UI,
-        // it should be marked as manual (so LDAP doesn't override it)
+        // it should be marked as manual (so automatic assignments don't override it)
 
         // Arrange
         var userId = Guid.NewGuid();
@@ -192,9 +192,9 @@ public class UserLanguageAssignmentBehaviorTests : IDisposable
     }
 
     [Fact]
-    public async Task LdapAssignment_ShouldBeMarkedAsAutomatic()
+    public async Task AutomaticAssignment_ShouldNotBeMarkedAsManual()
     {
-        // Scenario: When LDAP auto-assigns a language,
+        // Scenario: When auto-assign assigns a language,
         // it should NOT be marked as manual
 
         // Arrange
@@ -204,13 +204,13 @@ public class UserLanguageAssignmentBehaviorTests : IDisposable
 
         // Act
         await _userLanguageService.AssignLanguageAsync(
-            userId, portuguese.Id, "ldap-sync",
+            userId, portuguese.Id, "auto",
             manuallySet: false, // Automatic!
             isPluginManaged: true);
 
         // Assert
         var isManual = _userLanguageService.IsManuallySet(userId);
-        isManual.Should().BeFalse("LDAP assignments should not be marked as manual");
+        isManual.Should().BeFalse("automatic assignments should not be marked as manual");
     }
 
     #endregion

@@ -201,11 +201,6 @@ public class ConfigurationSummary
     public bool SyncAfterLibraryScan { get; set; }
 
     /// <summary>
-    /// Gets or sets whether LDAP integration is enabled.
-    /// </summary>
-    public bool LdapIntegrationEnabled { get; set; }
-
-    /// <summary>
     /// Gets or sets the number of excluded extensions.
     /// </summary>
     public int ExcludedExtensionCount { get; set; }

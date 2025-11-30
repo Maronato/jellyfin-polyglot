@@ -25,7 +25,6 @@ public class PolyglotControllerTests : IDisposable
     private readonly Mock<IMirrorService> _mirrorServiceMock;
     private readonly Mock<IUserLanguageService> _userLanguageServiceMock;
     private readonly Mock<ILibraryAccessService> _libraryAccessServiceMock;
-    private readonly Mock<ILdapIntegrationService> _ldapIntegrationServiceMock;
     private readonly Mock<IDebugReportService> _debugReportServiceMock;
     private readonly Mock<IUserManager> _userManagerMock;
     private readonly Mock<ILocalizationManager> _localizationManagerMock;
@@ -38,7 +37,6 @@ public class PolyglotControllerTests : IDisposable
         _mirrorServiceMock = new Mock<IMirrorService>();
         _userLanguageServiceMock = new Mock<IUserLanguageService>();
         _libraryAccessServiceMock = new Mock<ILibraryAccessService>();
-        _ldapIntegrationServiceMock = new Mock<ILdapIntegrationService>();
         _debugReportServiceMock = new Mock<IDebugReportService>();
         _userManagerMock = new Mock<IUserManager>();
         _localizationManagerMock = new Mock<ILocalizationManager>();
@@ -62,15 +60,14 @@ public class PolyglotControllerTests : IDisposable
             .Setup(s => s.DeleteMirrorAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DeleteMirrorResult { RemovedFromConfig = true, LibraryDeleted = true, FilesDeleted = true });
 
-        var configServiceMock = TestHelpers.MockFactory.CreateConfigurationService(_context.Configuration);
-
+        // Use the context's ConfigurationServiceMock which is properly wired to _plugin.UpdateConfiguration()
+        // This ensures consistency with any code that resolves IConfigurationService via ApplicationHost
         _controller = new PolyglotController(
             _mirrorServiceMock.Object,
             _userLanguageServiceMock.Object,
             _libraryAccessServiceMock.Object,
-            _ldapIntegrationServiceMock.Object,
             _debugReportServiceMock.Object,
-            configServiceMock.Object,
+            _context.ConfigurationServiceMock.Object,
             _userManagerMock.Object,
             _localizationManagerMock.Object,
             _serverConfigurationManagerMock.Object,
@@ -225,105 +222,6 @@ public class PolyglotControllerTests : IDisposable
         // Assert
         result.Should().BeOfType<NoContentResult>();
         _context.Configuration.LanguageAlternatives.Should().BeEmpty();
-    }
-
-    #endregion
-
-    #region AddLdapGroupMapping - Input validation
-
-    [Fact]
-    public void AddLdapGroupMapping_EmptyGroupDn_ReturnsBadRequest()
-    {
-        // Arrange
-        var alternative = _context.AddLanguageAlternative();
-        var request = new AddLdapGroupMappingRequest
-        {
-            LdapGroupDn = "",
-            LanguageAlternativeId = alternative.Id
-        };
-
-        // Act
-        var result = _controller.AddLdapGroupMapping(request);
-
-        // Assert
-        result.Result.Should().BeOfType<BadRequestObjectResult>();
-    }
-
-    [Fact]
-    public void AddLdapGroupMapping_AlternativeNotFound_ReturnsBadRequest()
-    {
-        // Arrange
-        var request = new AddLdapGroupMappingRequest
-        {
-            LdapGroupDn = "CN=Test,DC=test",
-            LanguageAlternativeId = Guid.NewGuid() // Non-existent
-        };
-
-        // Act
-        var result = _controller.AddLdapGroupMapping(request);
-
-        // Assert
-        result.Result.Should().BeOfType<BadRequestObjectResult>();
-        var badRequest = (BadRequestObjectResult)result.Result!;
-        badRequest.Value.Should().Be("Language alternative not found");
-    }
-
-    [Fact]
-    public void AddLdapGroupMapping_ValidRequest_AddsMappingWithPriority()
-    {
-        // Arrange
-        var alternative = _context.AddLanguageAlternative();
-        var request = new AddLdapGroupMappingRequest
-        {
-            LdapGroupDn = "CN=Portuguese Users,DC=example,DC=com",
-            LanguageAlternativeId = alternative.Id,
-            Priority = 150
-        };
-
-        // Act
-        var result = _controller.AddLdapGroupMapping(request);
-
-        // Assert
-        result.Result.Should().BeOfType<CreatedAtActionResult>();
-        _context.Configuration.LdapGroupMappings.Should().ContainSingle();
-        var mapping = _context.Configuration.LdapGroupMappings[0];
-        mapping.Priority.Should().Be(150);
-    }
-
-    #endregion
-
-    #region Settings - Gets and updates configuration
-
-    [Fact]
-    public void GetSettings_ReturnsCurrentSettings()
-    {
-        // Arrange
-        _context.Configuration.EnableLdapIntegration = true;
-
-        // Act
-        var result = _controller.GetSettings();
-
-        // Assert
-        result.Result.Should().BeOfType<OkObjectResult>();
-        var settings = (PluginSettings)((OkObjectResult)result.Result!).Value!;
-        settings.EnableLdapIntegration.Should().BeTrue();
-    }
-
-    [Fact]
-    public void UpdateSettings_UpdatesConfiguration()
-    {
-        // Arrange
-        var settings = new PluginSettings
-        {
-            EnableLdapIntegration = true
-        };
-
-        // Act
-        var result = _controller.UpdateSettings(settings);
-
-        // Assert
-        result.Should().BeOfType<NoContentResult>();
-        _context.Configuration.EnableLdapIntegration.Should().BeTrue();
     }
 
     #endregion
@@ -1009,73 +907,6 @@ public class PolyglotControllerTests : IDisposable
         mirror.IsMirror.Should().BeTrue("mirror library should be marked as mirror");
         mirror.LanguageAlternativeId.Should().Be(alternativeId,
             "mirror should reference its language alternative");
-    }
-
-    #endregion
-
-    #region DeleteLdapGroupMapping - DESIRED: Proper deletion and 404 handling
-
-    [Fact]
-    public void DeleteLdapGroupMapping_NotFound_ShouldReturn404()
-    {
-        // DESIRED BEHAVIOR: If the mapping doesn't exist, return 404 Not Found.
-        
-        // Arrange
-        var nonExistentMappingId = Guid.NewGuid();
-        // Don't add any mapping to config
-
-        // Act
-        var result = _controller.DeleteLdapGroupMapping(nonExistentMappingId);
-
-        // Assert
-        result.Should().BeOfType<NotFoundResult>(
-            "non-existent mapping should result in 404");
-    }
-
-    [Fact]
-    public void DeleteLdapGroupMapping_Found_ShouldRemoveAndReturn204()
-    {
-        // DESIRED BEHAVIOR: If mapping exists, remove it and return 204 No Content.
-        
-        // Arrange
-        var alternative = _context.AddLanguageAlternative("Portuguese", "pt-BR");
-        var mapping = _context.AddLdapGroupMapping("CN=Portuguese,DC=test", alternative.Id);
-        
-        _context.Configuration.LdapGroupMappings.Should().HaveCount(1, "precondition: mapping exists");
-
-        // Act
-        var result = _controller.DeleteLdapGroupMapping(mapping.Id);
-
-        // Assert
-        result.Should().BeOfType<NoContentResult>();
-        _context.Configuration.LdapGroupMappings.Should().BeEmpty(
-            "mapping should be removed from configuration");
-    }
-
-    [Fact]
-    public void DeleteLdapGroupMapping_ShouldOnlyDeleteSpecifiedMapping()
-    {
-        // DESIRED BEHAVIOR: Only the specified mapping should be deleted,
-        // other mappings should remain.
-        
-        // Arrange
-        var alternative1 = _context.AddLanguageAlternative("Portuguese", "pt-BR");
-        var alternative2 = _context.AddLanguageAlternative("Spanish", "es-ES");
-        
-        var mapping1 = _context.AddLdapGroupMapping("CN=Portuguese,DC=test", alternative1.Id);
-        var mapping2 = _context.AddLdapGroupMapping("CN=Spanish,DC=test", alternative2.Id);
-        
-        _context.Configuration.LdapGroupMappings.Should().HaveCount(2, "precondition: two mappings exist");
-
-        // Act - delete only the first mapping
-        var result = _controller.DeleteLdapGroupMapping(mapping1.Id);
-
-        // Assert
-        result.Should().BeOfType<NoContentResult>();
-        _context.Configuration.LdapGroupMappings.Should().HaveCount(1,
-            "only one mapping should remain");
-        _context.Configuration.LdapGroupMappings.Should().Contain(m => m.Id == mapping2.Id,
-            "the other mapping should still exist");
     }
 
     #endregion

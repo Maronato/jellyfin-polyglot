@@ -172,7 +172,6 @@ public partial class DebugReportService : IDebugReportService
             managedUsers,
             autoManageNewUsers,
             syncAfterLibraryScan,
-            ldapEnabled,
             excludedExtensionCount,
             excludedDirectoryCount
         ) = _configService.Read(c => (
@@ -181,7 +180,6 @@ public partial class DebugReportService : IDebugReportService
             c.UserLanguages.Count(u => u.IsPluginManaged),
             c.AutoManageNewUsers,
             c.SyncMirrorsAfterLibraryScan,
-            c.EnableLdapIntegration,
             c.ExcludedExtensions.Count,
             c.ExcludedDirectories.Count
         ));
@@ -193,7 +191,6 @@ public partial class DebugReportService : IDebugReportService
             ManagedUserCount = managedUsers,
             AutoManageNewUsers = autoManageNewUsers,
             SyncAfterLibraryScan = syncAfterLibraryScan,
-            LdapIntegrationEnabled = ldapEnabled,
             ExcludedExtensionCount = excludedExtensionCount,
             ExcludedDirectoryCount = excludedDirectoryCount
         };
@@ -889,7 +886,6 @@ public partial class DebugReportService : IDebugReportService
         sb.AppendLine($"- Managed Users: {report.Configuration.ManagedUserCount}");
         sb.AppendLine($"- Auto-manage new users: {(report.Configuration.AutoManageNewUsers ? "Yes" : "No")}");
         sb.AppendLine($"- Sync after library scan: {(report.Configuration.SyncAfterLibraryScan ? "Yes" : "No")}");
-        sb.AppendLine($"- LDAP Integration: {(report.Configuration.LdapIntegrationEnabled ? "Enabled" : "Disabled")}");
         sb.AppendLine($"- Excluded extensions: {report.Configuration.ExcludedExtensionCount}");
         sb.AppendLine($"- Excluded directories: {report.Configuration.ExcludedDirectoryCount}");
         sb.AppendLine();

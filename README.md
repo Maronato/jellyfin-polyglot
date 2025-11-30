@@ -27,7 +27,6 @@ Polyglot creates language-specific "mirror" libraries using filesystem hardlinks
 -   **Per-User Language Control** — Each user sees only libraries matching their assigned language
 -   **Watch Progress Syncs** — Since hardlinks point to the same file, watch history is automatically shared
 -   **Automatic Sync** — Mirrors update after library scans and on a configurable schedule (default: every 6 hours)
--   **LDAP Integration** — Auto-assign languages to users based on LDAP group membership
 -   **Auto-Manage New Users** — Optionally assign a default language to newly created users
 -   **Built-in Diagnostics** — Generate debug reports for easy troubleshooting
 
@@ -134,25 +133,6 @@ The **Settings tab** offers additional configuration:
 -   Ensure the user is set to "managed" in the Users tab
 -   Check that the user doesn't have "Enable access to all libraries" in their Jellyfin profile
 -   Run the daily reconciliation task manually: **Dashboard → Scheduled Tasks → Polyglot User Library Sync**
-
-**LDAP not assigning languages?**
-
--   Verify the [jellyfin-plugin-ldapauth](https://github.com/jellyfin/jellyfin-plugin-ldapauth) plugin is installed and configured
--   Enable LDAP integration in the LDAP tab
--   Test the connection with a username to verify group detection
--   Check that group mappings match your LDAP group DNs or CNs
-
-## LDAP Integration
-
-Polyglot can automatically assign languages based on LDAP group membership:
-
-1. Install [jellyfin-plugin-ldapauth](https://github.com/jellyfin/jellyfin-plugin-ldapauth) and configure it
-2. Go to **Polyglot → LDAP tab**
-3. Enable **LDAP Integration**
-4. Add group mappings (e.g., "Spanish Users" → Spanish language)
-5. Set priorities if users might be in multiple groups (higher priority wins)
-
-When a new user logs in via LDAP, Polyglot checks their groups and assigns the matching language automatically.
 
 ## How It Works
 

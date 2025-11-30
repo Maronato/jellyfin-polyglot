@@ -221,26 +221,6 @@ public class PluginTestContext : IDisposable
     }
 
     /// <summary>
-    /// Adds an LDAP group mapping to the configuration.
-    /// </summary>
-    public LdapGroupMapping AddLdapGroupMapping(
-        string groupDn,
-        Guid languageAlternativeId,
-        int priority = 100)
-    {
-        var mapping = new LdapGroupMapping
-        {
-            Id = Guid.NewGuid(),
-            LdapGroupDn = groupDn,
-            LdapGroupName = groupDn,
-            LanguageAlternativeId = languageAlternativeId,
-            Priority = priority
-        };
-        Configuration.LdapGroupMappings.Add(mapping);
-        return mapping;
-    }
-
-    /// <summary>
     /// Adds a library mirror to an alternative.
     /// </summary>
     public LibraryMirror AddMirror(
