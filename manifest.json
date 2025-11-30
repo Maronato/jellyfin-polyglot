@@ -10,6 +10,14 @@
     "repositoryUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot",
     "versions": [
       {
+        "version": "0.8.7.0",
+        "changelog": "## What's Changed\n\n### 🔄 Refactoring\n- Implement IConfigurationService for atomic configuration updates\n  - Introduced `IConfigurationService` to manage configuration changes atomically, preventing race conditions and stale references\n  - Refactored services and controllers to use centralized configuration access, ensuring thread safety and consistency\n  - Added deep cloning methods to models for safe configuration handling\n\n### 🔧 Improvements\n- Updated plugin uninstallation to use `IConfigurationService` for clearing configuration\n- Enhanced logging for configuration operations to improve traceability and debugging\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.8.6...v0.8.7",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot/releases/download/v0.8.7/polyglot_0.8.7.0.zip",
+        "checksum": "e15c0af4214b03d32b9c7149a3b960cb",
+        "timestamp": "2025-11-30T06:32:26Z"
+      },
+      {
         "version": "0.8.6.0",
         "changelog": "## What's Changed\n\n### ✨ New Features\n- Add UI configuration endpoints to PolyglotController\n  - Introduced `GetUIConfig` and `UpdateUIConfig` methods to manage plugin UI settings\n  - Enhanced response structure to include libraries, users, cultures, countries, LDAP status, and server configuration\n  - Updated front-end JavaScript to load and render UI data from the new API endpoints\n  - Implemented change detection for settings and LDAP integration in the configuration page\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.8.5...v0.8.6",
         "targetAbi": "10.10.0.0",
