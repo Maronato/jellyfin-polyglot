@@ -96,7 +96,7 @@ public class ConfigurationService : IConfigurationService
             if (mirror == null)
             {
                 _logger.PolyglotDebug("UpdateMirror: Mirror {0} not found",
-                    new LogMirrorEntity(mirrorId, string.Empty, string.Empty));
+                    this.CreateLogMirror(mirrorId));
                 return false;
             }
 
@@ -131,7 +131,7 @@ public class ConfigurationService : IConfigurationService
             if (alternative == null)
             {
                 _logger.PolyglotWarning("AddMirror: Alternative {0} not found",
-                    new LogAlternativeEntity(alternativeId, string.Empty, string.Empty));
+                    this.CreateLogAlternative(alternativeId));
                 return false;
             }
 
@@ -142,7 +142,7 @@ public class ConfigurationService : IConfigurationService
             if (alternative.MirroredLibraries.Any(m => m.SourceLibraryId == mirror.SourceLibraryId))
             {
                 _logger.PolyglotWarning("AddMirror: Duplicate mirror for source library {0} already exists in alternative {1}",
-                    new LogMirrorEntity(mirror.Id, mirror.SourceLibraryName, string.Empty), alternativeEntity);
+                    new LogMirrorEntity(mirror.Id, mirror.SourceLibraryName, mirror.TargetLibraryName), alternativeEntity);
                 return false;
             }
 
@@ -189,7 +189,7 @@ public class ConfigurationService : IConfigurationService
             }
 
             _logger.PolyglotDebug("RemoveMirror: Mirror {0} not found",
-                new LogMirrorEntity(mirrorId, string.Empty, string.Empty));
+                this.CreateLogMirror(mirrorId));
             return false;
         }
     }
@@ -241,7 +241,7 @@ public class ConfigurationService : IConfigurationService
             if (alternative == null)
             {
                 _logger.PolyglotDebug("UpdateAlternative: Alternative {0} not found",
-                    new LogAlternativeEntity(alternativeId, string.Empty, string.Empty));
+                    this.CreateLogAlternative(alternativeId));
                 return false;
             }
 
@@ -308,7 +308,7 @@ public class ConfigurationService : IConfigurationService
             if (alternative == null)
             {
                 _logger.PolyglotDebug("RemoveAlternative: Alternative {0} not found",
-                    new LogAlternativeEntity(alternativeId, string.Empty, string.Empty));
+                    this.CreateLogAlternative(alternativeId));
                 return false;
             }
 
@@ -355,7 +355,7 @@ public class ConfigurationService : IConfigurationService
             if (alternative == null)
             {
                 _logger.PolyglotDebug("TryRemoveAlternativeAtomic: Alternative {0} not found",
-                    new LogAlternativeEntity(alternativeId, string.Empty, string.Empty));
+                    this.CreateLogAlternative(alternativeId));
                 return RemoveAlternativeResult.NotFound();
             }
 
@@ -445,7 +445,7 @@ public class ConfigurationService : IConfigurationService
             var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
             bool isNew = userConfig == null;
 
-            var userEntity = new LogUserEntity(userId, string.Empty);
+            var userEntity = LogEntityFactory.CreateLogUserById(userId);
             if (isNew)
             {
                 userConfig = new UserLanguageConfig { UserId = userId };
@@ -482,7 +482,7 @@ public class ConfigurationService : IConfigurationService
 
             // Fresh lookup
             var userConfig = config.UserLanguages.FirstOrDefault(u => u.UserId == userId);
-            var userEntity = new LogUserEntity(userId, string.Empty);
+            var userEntity = LogEntityFactory.CreateLogUserById(userId);
             if (userConfig == null)
             {
                 _logger.PolyglotDebug("UpdateUserLanguage: User config for {0} not found", userEntity);
@@ -514,7 +514,7 @@ public class ConfigurationService : IConfigurationService
                 return false;
             }
 
-            var userEntity = new LogUserEntity(userId, string.Empty);
+            var userEntity = LogEntityFactory.CreateLogUserById(userId);
             var removed = config.UserLanguages.RemoveAll(u => u.UserId == userId);
             if (removed > 0)
             {
@@ -570,7 +570,7 @@ public class ConfigurationService : IConfigurationService
             Plugin.Instance?.SaveConfiguration();
 
             _logger.PolyglotInfo("AddLdapGroupMapping: Added LDAP mapping {0} -> alternative {1}",
-                mapping.Id, new LogAlternativeEntity(mapping.LanguageAlternativeId, string.Empty, string.Empty));
+                mapping.Id, this.CreateLogAlternative(mapping.LanguageAlternativeId));
             return true;
         }
     }

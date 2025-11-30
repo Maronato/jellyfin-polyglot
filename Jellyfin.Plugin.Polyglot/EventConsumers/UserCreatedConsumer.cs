@@ -83,7 +83,7 @@ public class UserCreatedConsumer : IEventConsumer<UserCreatedEventArgs>
                     {
                         _logger.PolyglotInfo(
                             "UserCreatedConsumer: Assigned language {0} to new user {1} via LDAP",
-                            new LogAlternative(languageId.Value, string.Empty, string.Empty),
+                            _configService.CreateLogAlternative(languageId.Value),
                             userEntity);
                     }
 

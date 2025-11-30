@@ -192,7 +192,7 @@ public class LibraryChangedConsumer : IHostedService, IDisposable
                     catch (Exception ex)
                     {
                         _logger.PolyglotError(ex, "LibraryChangedConsumer: Failed to add sources to user {0}",
-                            new LogUser(userConfig.UserId, string.Empty));
+                            LogEntityFactory.CreateLogUserById(userConfig.UserId));
                     }
                 }
             }

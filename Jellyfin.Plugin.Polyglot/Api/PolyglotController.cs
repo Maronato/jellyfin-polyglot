@@ -11,6 +11,7 @@ using Jellyfin.Plugin.Polyglot.Helpers;
 using Jellyfin.Plugin.Polyglot.Models;
 using Jellyfin.Plugin.Polyglot.Services;
 using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -40,6 +41,7 @@ public class PolyglotController : ControllerBase
     private readonly ILdapIntegrationService _ldapIntegrationService;
     private readonly IDebugReportService _debugReportService;
     private readonly IConfigurationService _configService;
+    private readonly IUserManager _userManager;
     private readonly ILocalizationManager _localizationManager;
     private readonly IServerConfigurationManager _serverConfigurationManager;
     private readonly ILogger<PolyglotController> _logger;
@@ -54,6 +56,7 @@ public class PolyglotController : ControllerBase
         ILdapIntegrationService ldapIntegrationService,
         IDebugReportService debugReportService,
         IConfigurationService configService,
+        IUserManager userManager,
         ILocalizationManager localizationManager,
         IServerConfigurationManager serverConfigurationManager,
         ILogger<PolyglotController> logger)
@@ -64,6 +67,7 @@ public class PolyglotController : ControllerBase
         _ldapIntegrationService = ldapIntegrationService;
         _debugReportService = debugReportService;
         _configService = configService;
+        _userManager = userManager;
         _localizationManager = localizationManager;
         _serverConfigurationManager = serverConfigurationManager;
         _logger = logger;
@@ -343,7 +347,7 @@ public class PolyglotController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         _logger.PolyglotDebug("DeleteAlternative: Deleting alternative {0}",
-            new LogAlternativeEntity(id, string.Empty, string.Empty));
+            _configService.CreateLogAlternative(id));
 
         var alternative = _configService.GetAlternative(id);
         if (alternative == null)
@@ -380,8 +384,8 @@ public class PolyglotController : ControllerBase
             }
             catch (Exception ex)
             {
-                var mirrorEntity = new LogMirrorEntity(mirror.Id, string.Empty, mirror.TargetLibraryName);
-                _logger.PolyglotError(ex, "DeleteAlternative: Failed to delete mirror {0}", mirrorEntity);
+                _logger.PolyglotError(ex, "DeleteAlternative: Failed to delete mirror {0}",
+                    _configService.CreateLogMirror(mirror.Id));
                 failedMirrors.Add((mirror.Id, mirror.TargetLibraryName, ex.Message));
             }
         }
@@ -436,7 +440,7 @@ public class PolyglotController : ControllerBase
         }
 
         _logger.PolyglotInfo("DeleteAlternative: Deleted alternative {0}",
-            new LogAlternativeEntity(id, alternative?.Name ?? string.Empty, alternative?.LanguageCode ?? string.Empty));
+            _configService.CreateLogAlternative(id, alternative?.Name, alternative?.LanguageCode));
 
         return NoContent();
     }
@@ -455,7 +459,7 @@ public class PolyglotController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         _logger.PolyglotDebug("AddLibraryMirror: Adding mirror to alternative {0}",
-            new LogAlternativeEntity(id, string.Empty, string.Empty));
+            _configService.CreateLogAlternative(id));
 
         var alternative = _configService.GetAlternative(id);
         if (alternative == null)
@@ -531,7 +535,7 @@ public class PolyglotController : ControllerBase
                 catch (Exception ex)
                 {
                     _logger.PolyglotWarning(ex, "AddLibraryMirror: Failed to update access for user {0}",
-                        new LogUserEntity(userId, string.Empty));
+                        _userManager.CreateLogUser(userId));
                 }
             }
 
@@ -588,7 +592,7 @@ public class PolyglotController : ControllerBase
     public async Task<IActionResult> SyncAlternative(Guid id, CancellationToken cancellationToken = default)
     {
         _logger.PolyglotDebug("SyncAlternative: Starting sync for alternative {0}",
-            new LogAlternativeEntity(id, string.Empty, string.Empty));
+            _configService.CreateLogAlternative(id));
 
         var alternative = _configService.GetAlternative(id);
         if (alternative == null)
@@ -665,9 +669,8 @@ public class PolyglotController : ControllerBase
         [FromQuery] bool force = false,
         CancellationToken cancellationToken = default)
     {
-        _logger.PolyglotDebug("DeleteLibraryMirror: Deleting mirror for source {0} from alternative {1} (force: {2})",
-            new LogMirrorEntity(Guid.Empty, string.Empty, string.Empty),
-            new LogAlternativeEntity(id, string.Empty, string.Empty),
+        _logger.PolyglotDebug("DeleteLibraryMirror: Deleting mirror from alternative {0} (force: {1})",
+            _configService.CreateLogAlternative(id),
             force);
 
         var alternative = _configService.GetAlternative(id);
@@ -720,7 +723,7 @@ public class PolyglotController : ControllerBase
                 catch (Exception ex)
                 {
                     _logger.PolyglotWarning(ex, "DeleteLibraryMirror: Failed to update access for user {0}",
-                        new LogUserEntity(userId, string.Empty));
+                        _userManager.CreateLogUser(userId));
                 }
             }
 
@@ -786,7 +789,7 @@ public class PolyglotController : ControllerBase
         catch (Exception ex)
         {
             _logger.PolyglotError(ex, "SetUserLanguage: Failed for user {0}",
-                new LogUserEntity(userId, string.Empty));
+                _userManager.CreateLogUser(userId));
             return BadRequest(ex.Message);
         }
     }

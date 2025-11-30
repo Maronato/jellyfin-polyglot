@@ -45,13 +45,13 @@ public class LibraryAccessService : ILibraryAccessService
     public async Task UpdateUserLibraryAccessAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         _logger.PolyglotDebug("UpdateUserLibraryAccessAsync: Starting for user {0}",
-            new LogUserEntity(userId, string.Empty));
+            _userManager.CreateLogUser(userId));
 
         var user = _userManager.GetUserById(userId);
         if (user == null)
         {
             _logger.PolyglotWarning("UpdateUserLibraryAccessAsync: User {0} not found",
-                new LogUserEntity(userId, string.Empty));
+                _userManager.CreateLogUser(userId));
             return;
         }
 
@@ -189,7 +189,7 @@ public class LibraryAccessService : ILibraryAccessService
             catch (Exception ex)
             {
                 _logger.PolyglotError(ex, "ReconcileAllUsersAsync: Failed to reconcile user {0}",
-                    new LogUserEntity(userLang.UserId, string.Empty));
+                    _userManager.CreateLogUser(userLang.UserId));
             }
         }
 
@@ -410,13 +410,13 @@ public class LibraryAccessService : ILibraryAccessService
     public async Task DisableUserAsync(Guid userId, bool restoreFullAccess = false, CancellationToken cancellationToken = default)
     {
         _logger.PolyglotDebug("DisableUserAsync: Disabling user {0}",
-            new LogUserEntity(userId, string.Empty));
+            _userManager.CreateLogUser(userId));
 
         var user = _userManager.GetUserById(userId);
         if (user == null)
         {
             _logger.PolyglotWarning("DisableUserAsync: User {0} not found",
-                new LogUserEntity(userId, string.Empty));
+                _userManager.CreateLogUser(userId));
             return;
         }
 
@@ -459,7 +459,7 @@ public class LibraryAccessService : ILibraryAccessService
         if (user == null)
         {
             _logger.PolyglotWarning("AddLibrariesToUserAccessAsync: User {0} not found",
-                new LogUserEntity(userId, string.Empty));
+                _userManager.CreateLogUser(userId));
             return;
         }
 

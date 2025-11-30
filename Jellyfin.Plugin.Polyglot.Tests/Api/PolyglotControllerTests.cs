@@ -4,6 +4,7 @@ using Jellyfin.Plugin.Polyglot.Models;
 using Jellyfin.Plugin.Polyglot.Services;
 using Jellyfin.Plugin.Polyglot.Tests.TestHelpers;
 using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Globalization;
 using Microsoft.AspNetCore.Http;
@@ -26,6 +27,7 @@ public class PolyglotControllerTests : IDisposable
     private readonly Mock<ILibraryAccessService> _libraryAccessServiceMock;
     private readonly Mock<ILdapIntegrationService> _ldapIntegrationServiceMock;
     private readonly Mock<IDebugReportService> _debugReportServiceMock;
+    private readonly Mock<IUserManager> _userManagerMock;
     private readonly Mock<ILocalizationManager> _localizationManagerMock;
     private readonly Mock<IServerConfigurationManager> _serverConfigurationManagerMock;
     private readonly PolyglotController _controller;
@@ -38,6 +40,7 @@ public class PolyglotControllerTests : IDisposable
         _libraryAccessServiceMock = new Mock<ILibraryAccessService>();
         _ldapIntegrationServiceMock = new Mock<ILdapIntegrationService>();
         _debugReportServiceMock = new Mock<IDebugReportService>();
+        _userManagerMock = new Mock<IUserManager>();
         _localizationManagerMock = new Mock<ILocalizationManager>();
         _serverConfigurationManagerMock = new Mock<IServerConfigurationManager>();
         var logger = new Mock<ILogger<PolyglotController>>();
@@ -68,6 +71,7 @@ public class PolyglotControllerTests : IDisposable
             _ldapIntegrationServiceMock.Object,
             _debugReportServiceMock.Object,
             configServiceMock.Object,
+            _userManagerMock.Object,
             _localizationManagerMock.Object,
             _serverConfigurationManagerMock.Object,
             logger.Object);

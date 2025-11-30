@@ -102,7 +102,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
             foreach (var mirror in mirrorIds)
             {
-                var mirrorEntity = new LogMirror(mirror.Id, string.Empty, mirror.TargetLibraryName);
+                var mirrorEntity = configService.CreateLogMirror(mirror.Id);
                 try
                 {
                     _logger.PolyglotDebug("Plugin OnUninstalling: Deleting mirror {0}", mirrorEntity);
