@@ -105,7 +105,7 @@ Polyglot is a Jellyfin plugin that creates "mirror" libraries using filesystem h
 │    │       └── poster.jpg               ← English artwork (NOT hardlinked)             │
 │    │                                                                                   │
 │    └── polyglot/                                                                       │
-│        └── spanish/                  ← Language alternative destination                │
+│        └── spanish/                     ← Language alternative destination             │
 │            └── movies/                  ← Mirror library path                          │
 │                └── Inception (2010)/                                                   │
 │                    ├── Inception.mkv    ← Hardlink to same inode 12345                 │
@@ -197,13 +197,13 @@ User assigned to "Spanish" language
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                    Operating System                            │  │
-│  │                                                                │  │
+│  │                    Operating System                           │  │
+│  │                                                               │  │
 │  │  ┌────────────────────────┐  ┌────────────────────────┐       │  │
 │  │  │ Windows: kernel32.dll  │  │ Unix: libc             │       │  │
 │  │  │   CreateHardLink()     │  │   link()               │       │  │
 │  │  └────────────────────────┘  └────────────────────────┘       │  │
-│  │                                                                │  │
+│  │                                                               │  │
 │  │  Filesystem must support hardlinks (ext4, NTFS, APFS,         │  │
 │  │  XFS, btrfs, ZFS)                                             │  │
 │  └───────────────────────────────────────────────────────────────┘  │
