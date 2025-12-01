@@ -10,6 +10,14 @@
     "repositoryUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot",
     "versions": [
       {
+        "version": "0.9.1.0",
+        "changelog": "## What's Changed\n\n### 🔧 Maintenance\n- Update logo image URL in manifest.json\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.9.0...v0.9.1",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot/releases/download/v0.9.1/polyglot_0.9.1.0.zip",
+        "checksum": "14575d3c2a62141cfe29c599333a9c99",
+        "timestamp": "2025-12-01T21:32:48Z"
+      },
+      {
         "version": "0.9.0.0",
         "changelog": "## What's Changed\n\n### ✨ New Features\n- Add support for included directories in mirroring process\n  - Introduced the concept of included directories, allowing files in specified directories to be synced regardless of their extensions\n  - Enhanced the UI to allow users to configure included directories in settings\n  - Modified the MirrorService to respect included directories during the mirroring process\n\n### 📝 Documentation\n- Update README and add images for Languages, Users, and Settings tabs\n- Improve formatting and clarity in README documentation\n- Remove outdated notice from README\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.8.13...v0.9.0",
         "targetAbi": "10.10.0.0",
