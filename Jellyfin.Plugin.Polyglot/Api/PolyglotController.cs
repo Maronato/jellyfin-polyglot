@@ -113,6 +113,7 @@ public class PolyglotController : ControllerBase
             Alternatives = c.LanguageAlternatives.ToList(),
             ExcludedExtensions = c.ExcludedExtensions.ToList(),
             ExcludedDirectories = c.ExcludedDirectories.ToList(),
+            IncludedDirectories = c.IncludedDirectories.ToList(),
             c.AutoManageNewUsers,
             c.DefaultLanguageAlternativeId,
             c.SyncMirrorsAfterLibraryScan
@@ -132,8 +133,10 @@ public class PolyglotController : ControllerBase
                 SyncMirrorsAfterLibraryScan = configData.SyncMirrorsAfterLibraryScan,
                 ExcludedExtensions = configData.ExcludedExtensions,
                 ExcludedDirectories = configData.ExcludedDirectories,
+                IncludedDirectories = configData.IncludedDirectories,
                 DefaultExcludedExtensions = PluginConfiguration.DefaultExcludedExtensions.ToList(),
-                DefaultExcludedDirectories = PluginConfiguration.DefaultExcludedDirectories.ToList()
+                DefaultExcludedDirectories = PluginConfiguration.DefaultExcludedDirectories.ToList(),
+                DefaultIncludedDirectories = PluginConfiguration.DefaultIncludedDirectories.ToList()
             },
             ServerConfig = new ServerConfigInfo
             {
@@ -199,6 +202,11 @@ public class PolyglotController : ControllerBase
             if (settings.ExcludedDirectories != null)
             {
                 config.ExcludedDirectories = new HashSet<string>(settings.ExcludedDirectories, StringComparer.OrdinalIgnoreCase);
+            }
+
+            if (settings.IncludedDirectories != null)
+            {
+                config.IncludedDirectories = new HashSet<string>(settings.IncludedDirectories, StringComparer.OrdinalIgnoreCase);
             }
 
             return true;
@@ -1047,6 +1055,11 @@ public class UISettingsResponse
     public List<string> ExcludedDirectories { get; set; } = new();
 
     /// <summary>
+    /// Gets or sets the included directory names (directories where all files are synced regardless of extension).
+    /// </summary>
+    public List<string> IncludedDirectories { get; set; } = new();
+
+    /// <summary>
     /// Gets or sets the default excluded extensions (read-only).
     /// </summary>
     public List<string> DefaultExcludedExtensions { get; set; } = new();
@@ -1055,6 +1068,11 @@ public class UISettingsResponse
     /// Gets or sets the default excluded directories (read-only).
     /// </summary>
     public List<string> DefaultExcludedDirectories { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the default included directories (read-only).
+    /// </summary>
+    public List<string> DefaultIncludedDirectories { get; set; } = new();
 }
 
 /// <summary>
@@ -1102,6 +1120,11 @@ public class UISettingsUpdateRequest
     /// Gets or sets the excluded directory names (replaces existing list).
     /// </summary>
     public List<string>? ExcludedDirectories { get; set; }
+
+    /// <summary>
+    /// Gets or sets the included directory names (replaces existing list).
+    /// </summary>
+    public List<string>? IncludedDirectories { get; set; }
 }
 
 /// <summary>

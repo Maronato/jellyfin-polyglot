@@ -460,13 +460,13 @@ public class MirrorServiceFileOperationTests : IDisposable
         // Arrange
         var sourceDir = Path.Combine(_tempDir, "source");
         var targetDir = Path.Combine(_tempDir, "target");
-        Directory.CreateDirectory(Path.Combine(sourceDir, ".trickplay"));
         Directory.CreateDirectory(Path.Combine(sourceDir, "extrafanart"));
+        Directory.CreateDirectory(Path.Combine(sourceDir, "metadata"));
         Directory.CreateDirectory(targetDir);
 
         File.WriteAllText(Path.Combine(sourceDir, "movie.mkv"), "video");
-        File.WriteAllText(Path.Combine(sourceDir, ".trickplay", "data.bif"), "trickplay");
         File.WriteAllText(Path.Combine(sourceDir, "extrafanart", "art.jpg"), "art");
+        File.WriteAllText(Path.Combine(sourceDir, "metadata", "data.xml"), "metadata");
 
         var sourceId = Guid.NewGuid();
         _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>
@@ -489,8 +489,49 @@ public class MirrorServiceFileOperationTests : IDisposable
 
         // Assert
         File.Exists(Path.Combine(targetDir, "movie.mkv")).Should().BeTrue();
-        Directory.Exists(Path.Combine(targetDir, ".trickplay")).Should().BeFalse("excluded directories should not be created");
-        Directory.Exists(Path.Combine(targetDir, "extrafanart")).Should().BeFalse();
+        Directory.Exists(Path.Combine(targetDir, "extrafanart")).Should().BeFalse("excluded directories should not be created");
+        Directory.Exists(Path.Combine(targetDir, "metadata")).Should().BeFalse("excluded directories should not be created");
+    }
+
+    [Fact]
+    public async Task SyncMirrorAsync_IncludedDirectories_SyncedWithImages()
+    {
+        // Arrange - .trickplay and .actors are included directories where all files sync regardless of extension
+        var sourceDir = Path.Combine(_tempDir, "source");
+        var targetDir = Path.Combine(_tempDir, "target");
+        Directory.CreateDirectory(Path.Combine(sourceDir, ".trickplay"));
+        Directory.CreateDirectory(Path.Combine(sourceDir, ".actors"));
+        Directory.CreateDirectory(targetDir);
+
+        File.WriteAllText(Path.Combine(sourceDir, "movie.mkv"), "video");
+        File.WriteAllText(Path.Combine(sourceDir, ".trickplay", "preview.jpg"), "trickplay"); // .jpg would be excluded normally
+        File.WriteAllText(Path.Combine(sourceDir, ".actors", "actor.jpg"), "actor photo"); // .jpg would be excluded normally
+
+        var sourceId = Guid.NewGuid();
+        _libraryManagerMock.Setup(m => m.GetVirtualFolders()).Returns(new List<VirtualFolderInfo>
+        {
+            new() { ItemId = sourceId.ToString(), Name = "Movies", Locations = new[] { sourceDir } }
+        });
+
+        var mirror = new LibraryMirror
+        {
+            Id = Guid.NewGuid(),
+            SourceLibraryId = sourceId,
+            SourceLibraryName = "Movies",
+            TargetPath = targetDir,
+            Status = SyncStatus.Pending
+        };
+        SetupMirrorConfig(mirror);
+
+        // Act
+        await _service.SyncMirrorAsync(mirror.Id);
+
+        // Assert
+        File.Exists(Path.Combine(targetDir, "movie.mkv")).Should().BeTrue();
+        Directory.Exists(Path.Combine(targetDir, ".trickplay")).Should().BeTrue("included directories should be synced");
+        File.Exists(Path.Combine(targetDir, ".trickplay", "preview.jpg")).Should().BeTrue("files in included directories bypass extension exclusions");
+        Directory.Exists(Path.Combine(targetDir, ".actors")).Should().BeTrue("included directories should be synced");
+        File.Exists(Path.Combine(targetDir, ".actors", "actor.jpg")).Should().BeTrue("files in included directories bypass extension exclusions");
     }
 
     [Fact]

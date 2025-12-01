@@ -98,27 +98,58 @@
                         </div>
 
                         <div class="verticalSection">
-                            <h3 class="sectionTitle">File Exclusions</h3>
-                            <p class="fieldDescription" style="margin-bottom: 1em;">
-                                Customize which files and directories are excluded from mirroring. 
-                                Excluded files will not be hardlinked - typically metadata and images that should be language-specific.
-                            </p>
-                            
-                            <div class="inputContainer" style="margin-bottom: 1.5em;">
-                                <label class="inputLabel inputLabelUnfocused" for="excludedExtensions" style="display: block; margin-bottom: 0.5em;">Excluded File Extensions</label>
-                                <textarea id="excludedExtensions" is="emby-textarea" rows="6" style="font-family: monospace; width: 100%; box-sizing: border-box;"></textarea>
-                                <div class="fieldDescription">File extensions to exclude from hardlinking (one per line, include the dot).</div>
-                            </div>
-                            
-                            <div class="inputContainer" style="margin-bottom: 1.5em;">
-                                <label class="inputLabel inputLabelUnfocused" for="excludedDirectories" style="display: block; margin-bottom: 0.5em;">Excluded Directory Names</label>
-                                <textarea id="excludedDirectories" is="emby-textarea" rows="6" style="font-family: monospace; width: 100%; box-sizing: border-box;"></textarea>
-                                <div class="fieldDescription">Directory names to exclude from mirroring (one per line).</div>
-                            </div>
-                            
-                            <button is="emby-button" type="button" class="raised" id="btnResetExclusions">
-                                <span>Reset to Defaults</span>
+                            <button type="button" class="emby-collapse" id="advancedSettingsToggle">
+                                <span class="collapseTitle">Advanced Settings</span>
                             </button>
+                            <div id="advancedSettingsContent" class="collapseContent" style="display: none;">
+                                <div style="margin-bottom: 2em;">
+                                    <h4 style="margin-bottom: 0.5em;">Language-Independent Content</h4>
+                                    <p class="fieldDescription" style="margin-bottom: 1em;">
+                                        Some directories contain files that are the same across all languages. 
+                                        Enable these options to sync their contents regardless of file type.
+                                    </p>
+                                    
+                                    <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom: 0.8em;">
+                                        <label class="emby-checkbox-label">
+                                            <input id="syncTrickplayImages" type="checkbox" is="emby-checkbox" checked />
+                                            <span>Sync trickplay images</span>
+                                        </label>
+                                        <div class="fieldDescription">Trickplay preview thumbnails (used for video scrubbing) are generated from video frames and are language-independent.</div>
+                                    </div>
+                                    
+                                    <div class="checkboxContainer checkboxContainer-withDescription" style="margin-bottom: 1em;">
+                                        <label class="emby-checkbox-label">
+                                            <input id="syncActorImages" type="checkbox" is="emby-checkbox" checked />
+                                            <span>Sync actor images</span>
+                                        </label>
+                                        <div class="fieldDescription">Actor photos are language-independent (the actor's name and biography in metadata may vary, but the photo doesn't).</div>
+                                    </div>
+                                </div>
+                                
+                                <div style="margin-bottom: 1.5em;">
+                                    <h4 style="margin-bottom: 0.5em;">File Exclusions</h4>
+                                    <p class="fieldDescription" style="margin-bottom: 1em;">
+                                        Customize which files and directories are excluded from mirroring. 
+                                        Excluded files will not be hardlinked - typically metadata and images that should be language-specific.
+                                    </p>
+                                    
+                                    <div class="inputContainer" style="margin-bottom: 1.5em;">
+                                        <label class="inputLabel inputLabelUnfocused" for="excludedExtensions" style="display: block; margin-bottom: 0.5em;">Excluded File Extensions</label>
+                                        <textarea id="excludedExtensions" is="emby-textarea" rows="6" style="font-family: monospace; width: 100%; box-sizing: border-box;"></textarea>
+                                        <div class="fieldDescription">File extensions to exclude from hardlinking (one per line, include the dot).</div>
+                                    </div>
+                                    
+                                    <div class="inputContainer" style="margin-bottom: 1.5em;">
+                                        <label class="inputLabel inputLabelUnfocused" for="excludedDirectories" style="display: block; margin-bottom: 0.5em;">Excluded Directory Names</label>
+                                        <textarea id="excludedDirectories" is="emby-textarea" rows="6" style="font-family: monospace; width: 100%; box-sizing: border-box;"></textarea>
+                                        <div class="fieldDescription">Directory names to exclude from mirroring (one per line).</div>
+                                    </div>
+                                    
+                                    <button is="emby-button" type="button" class="raised" id="btnResetExclusions">
+                                        <span>Reset to Defaults</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
 
                         <div>
@@ -609,6 +640,7 @@
                     var syncAfterScan = settings.SyncMirrorsAfterLibraryScan !== false;
                     var extensions = settings.ExcludedExtensions || settings.DefaultExcludedExtensions || [];
                     var directories = settings.ExcludedDirectories || settings.DefaultExcludedDirectories || [];
+                    var includedDirectories = settings.IncludedDirectories || settings.DefaultIncludedDirectories || [];
                     
                     document.getElementById('autoManageNewUsers').checked = autoManageNewUsers;
                     
@@ -628,22 +660,34 @@
                     document.getElementById('excludedExtensions').value = extensions.join('\n');
                     document.getElementById('excludedDirectories').value = directories.join('\n');
                     
+                    // Set checkboxes based on included directories (case-insensitive check)
+                    var includedLower = includedDirectories.map(function(d) { return d.toLowerCase(); });
+                    document.getElementById('syncTrickplayImages').checked = includedLower.indexOf('.trickplay') !== -1;
+                    document.getElementById('syncActorImages').checked = includedLower.indexOf('.actors') !== -1;
+                    
                     // Store initial values for change detection
                     this.initialSettings = {
                         AutoManageNewUsers: autoManageNewUsers,
                         DefaultLanguageAlternativeId: defaultLangId,
                         SyncMirrorsAfterLibraryScan: syncAfterScan,
                         ExcludedExtensions: extensions.slice(), // copy array
-                        ExcludedDirectories: directories.slice() // copy array
+                        ExcludedDirectories: directories.slice(), // copy array
+                        IncludedDirectories: includedDirectories.slice() // copy array
                     };
                 },
                 
                 resetExclusionsToDefaults: function() {
                     var defaults = this.settings;
-                    if (defaults.DefaultExcludedExtensions && defaults.DefaultExcludedDirectories) {
+                    if (defaults.DefaultExcludedExtensions && defaults.DefaultExcludedDirectories && defaults.DefaultIncludedDirectories) {
                         document.getElementById('excludedExtensions').value = defaults.DefaultExcludedExtensions.join('\n');
                         document.getElementById('excludedDirectories').value = defaults.DefaultExcludedDirectories.join('\n');
-                        Dashboard.alert('Exclusion settings reset to defaults. Click "Save Settings" to apply.');
+                        
+                        // Reset checkboxes based on default included directories
+                        var includedLower = defaults.DefaultIncludedDirectories.map(function(d) { return d.toLowerCase(); });
+                        document.getElementById('syncTrickplayImages').checked = includedLower.indexOf('.trickplay') !== -1;
+                        document.getElementById('syncActorImages').checked = includedLower.indexOf('.actors') !== -1;
+                        
+                        Dashboard.alert('Advanced settings reset to defaults. Click "Save Settings" to apply.');
                     } else {
                         // Reload config if defaults not available
                         this.loadUIConfig();
@@ -903,6 +947,15 @@
                     var currentDirectories = directoriesText.split('\n')
                             .map(function(s) { return s.trim(); })
                             .filter(function(s) { return s.length > 0; });
+                    
+                    // Build included directories from checkboxes
+                    var currentIncludedDirectories = [];
+                    if (document.getElementById('syncTrickplayImages').checked) {
+                        currentIncludedDirectories.push('.trickplay');
+                    }
+                    if (document.getElementById('syncActorImages').checked) {
+                        currentIncludedDirectories.push('.actors');
+                    }
                         
                     // Build update request with ONLY changed settings
                     var settingsUpdate = {};
@@ -916,6 +969,7 @@
                         settingsUpdate.SyncMirrorsAfterLibraryScan = currentSyncAfterScan;
                         settingsUpdate.ExcludedExtensions = currentExtensions;
                         settingsUpdate.ExcludedDirectories = currentDirectories;
+                        settingsUpdate.IncludedDirectories = currentIncludedDirectories;
                         hasChanges = true;
                     } else {
                         // Only include fields that have changed
@@ -944,6 +998,11 @@
                             settingsUpdate.ExcludedDirectories = currentDirectories;
                             hasChanges = true;
                         }
+                        
+                        if (!this.arraysEqual(currentIncludedDirectories, this.initialSettings.IncludedDirectories)) {
+                            settingsUpdate.IncludedDirectories = currentIncludedDirectories;
+                            hasChanges = true;
+                        }
                     }
                     
                     if (!hasChanges) {
@@ -970,7 +1029,8 @@
                             DefaultLanguageAlternativeId: config.Settings.DefaultLanguageAlternativeId || '',
                             SyncMirrorsAfterLibraryScan: config.Settings.SyncMirrorsAfterLibraryScan !== false,
                             ExcludedExtensions: (config.Settings.ExcludedExtensions || []).slice(),
-                            ExcludedDirectories: (config.Settings.ExcludedDirectories || []).slice()
+                            ExcludedDirectories: (config.Settings.ExcludedDirectories || []).slice(),
+                            IncludedDirectories: (config.Settings.IncludedDirectories || []).slice()
                         };
                         
                         Dashboard.hideLoadingMsg();
@@ -1194,6 +1254,19 @@
                     // Enable all users button
                     document.getElementById('btnEnableAllUsers').addEventListener('click', function() {
                         self.enableAllUsers();
+                    });
+
+                    // Advanced settings toggle
+                    document.getElementById('advancedSettingsToggle').addEventListener('click', function() {
+                        var content = document.getElementById('advancedSettingsContent');
+                        var toggle = document.getElementById('advancedSettingsToggle');
+                        if (content.style.display === 'none') {
+                            content.style.display = 'block';
+                            toggle.classList.add('expanded');
+                        } else {
+                            content.style.display = 'none';
+                            toggle.classList.remove('expanded');
+                        }
                     });
 
                     // Reset exclusions button

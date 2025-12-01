@@ -206,9 +206,7 @@ public class FileClassifierTests
     [Theory]
     [InlineData("extrafanart")]
     [InlineData("extrathumbs")]
-    [InlineData(".trickplay")]
     [InlineData("metadata")]
-    [InlineData(".actors")]
     public void ShouldExcludeDirectory_ExcludedDirectories_ReturnsTrue(string dirName)
     {
         // Arrange
@@ -255,8 +253,8 @@ public class FileClassifierTests
     [Fact]
     public void ShouldHardlink_FileInNestedExcludedDirectory_ReturnsFalse()
     {
-        // Arrange
-        var filePath = "/media/movies/Movie/.trickplay/segment/tile.bif";
+        // Arrange - using extrafanart which is still in excluded directories
+        var filePath = "/media/movies/Movie/extrafanart/nested/fanart.mkv";
 
         // Act
         var result = FileClassifier.ShouldHardlink(filePath);
@@ -538,9 +536,122 @@ public class FileClassifierTests
         // Assert
         FileClassifier.DefaultExcludedDirectories.Should().Contain("extrafanart");
         FileClassifier.DefaultExcludedDirectories.Should().Contain("extrathumbs");
-        FileClassifier.DefaultExcludedDirectories.Should().Contain(".trickplay");
         FileClassifier.DefaultExcludedDirectories.Should().Contain("metadata");
-        FileClassifier.DefaultExcludedDirectories.Should().Contain(".actors");
+        // .trickplay and .actors moved to included directories
+        FileClassifier.DefaultExcludedDirectories.Should().NotContain(".trickplay");
+        FileClassifier.DefaultExcludedDirectories.Should().NotContain(".actors");
+    }
+
+    [Fact]
+    public void DefaultIncludedDirectories_ContainsExpectedValues()
+    {
+        // Assert - these directories contain language-independent content
+        FileClassifier.DefaultIncludedDirectories.Should().Contain(".trickplay");
+        FileClassifier.DefaultIncludedDirectories.Should().Contain(".actors");
+    }
+
+    #endregion
+
+    #region Included Directory Tests
+
+    [Theory]
+    [InlineData(".trickplay")]
+    [InlineData(".actors")]
+    public void IsIncludedDirectory_IncludedDirectories_ReturnsTrue(string dirName)
+    {
+        // Arrange
+        var directoryPath = $"/media/movies/Movie/{dirName}";
+
+        // Act
+        var result = FileClassifier.IsIncludedDirectory(directoryPath);
+
+        // Assert
+        result.Should().BeTrue($"{dirName} is an included directory");
+    }
+
+    [Theory]
+    [InlineData("Movie")]
+    [InlineData("extrafanart")]
+    [InlineData("metadata")]
+    public void IsIncludedDirectory_NotIncludedDirectories_ReturnsFalse(string dirName)
+    {
+        // Arrange
+        var directoryPath = $"/media/movies/{dirName}";
+
+        // Act
+        var result = FileClassifier.IsIncludedDirectory(directoryPath);
+
+        // Assert
+        result.Should().BeFalse($"{dirName} is not an included directory");
+    }
+
+    [Theory]
+    [InlineData("/media/movies/Movie/.trickplay/tile.jpg")]
+    [InlineData("/media/movies/Movie/.trickplay/segment/tile.jpg")]
+    [InlineData("/media/movies/Movie/.actors/actor.jpg")]
+    public void ShouldHardlink_ImageFileInIncludedDirectory_ReturnsTrue(string filePath)
+    {
+        // Act
+        var result = FileClassifier.ShouldHardlink(filePath);
+
+        // Assert
+        result.Should().BeTrue($"{filePath} is in an included directory and should be hardlinked regardless of extension");
+    }
+
+    [Fact]
+    public void ShouldHardlink_FileInIncludedDirectory_BypassesExtensionExclusion()
+    {
+        // Arrange - .jpg would normally be excluded, but .trickplay is included
+        var filePath = "/media/movies/Movie/.trickplay/preview.jpg";
+
+        // Act
+        var result = FileClassifier.ShouldHardlink(filePath);
+
+        // Assert
+        result.Should().BeTrue("files in included directories bypass extension exclusions");
+    }
+
+    [Fact]
+    public void ShouldHardlink_WithCustomIncludedDirectories_UsesCustomList()
+    {
+        // Arrange - custom list that includes "custom_included"
+        var customIncluded = new[] { "custom_included" };
+        var filePath = "/media/movies/Movie/custom_included/image.jpg"; // .jpg normally excluded
+
+        // Act
+        var result = FileClassifier.ShouldHardlink(filePath, null, null, customIncluded);
+
+        // Assert
+        result.Should().BeTrue("custom included directories override extension exclusions");
+    }
+
+    [Fact]
+    public void ShouldHardlink_WithEmptyIncludedDirectories_DoesNotBypassExclusions()
+    {
+        // Arrange - empty included list means no bypass
+        var emptyIncluded = Array.Empty<string>();
+        var filePath = "/media/movies/Movie/.trickplay/preview.jpg";
+
+        // Act
+        var result = FileClassifier.ShouldHardlink(filePath, null, null, emptyIncluded);
+
+        // Assert
+        result.Should().BeFalse(".jpg is excluded and included directories list is empty");
+    }
+
+    [Fact]
+    public void ShouldHardlink_ExcludedDirectoryTakesPrecedenceOverIncluded()
+    {
+        // Arrange - if a directory is in BOTH lists, excluded wins (safety)
+        var excludedDirs = new[] { "both" };
+        var includedDirs = new[] { "both" };
+        var filePath = "/media/movies/Movie/both/file.mkv";
+
+        // Act
+        var result = FileClassifier.ShouldHardlink(filePath, null, excludedDirs, includedDirs);
+
+        // Assert
+        result.Should().BeFalse("excluded directories take precedence over included directories");
     }
 
     #endregion

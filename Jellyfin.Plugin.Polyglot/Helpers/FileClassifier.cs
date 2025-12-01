@@ -8,6 +8,7 @@ namespace Jellyfin.Plugin.Polyglot.Helpers;
 /// <summary>
 /// Classifies files to determine if they should be hardlinked or excluded from mirroring.
 /// Uses an exclusion-based approach: hardlink everything except metadata files.
+/// Included directories override extension exclusions for language-independent content.
 /// </summary>
 public static class FileClassifier
 {
@@ -33,20 +34,28 @@ public static class FileClassifier
     {
         "extrafanart",
         "extrathumbs",
+        "metadata"
+    };
+
+    /// <summary>
+    /// Default directory names where all files should be hardlinked regardless of extension.
+    /// These contain language-independent content like trickplay images and actor photos.
+    /// </summary>
+    public static readonly HashSet<string> DefaultIncludedDirectories = new(StringComparer.OrdinalIgnoreCase)
+    {
         ".trickplay",
-        "metadata",
         ".actors"
     };
 
     /// <summary>
     /// Determines whether a file should be hardlinked (included in the mirror).
-    /// Uses the default excluded extensions and directories.
+    /// Uses the default excluded/included extensions and directories.
     /// </summary>
     /// <param name="filePath">The full path to the file.</param>
     /// <returns>True if the file should be hardlinked; false if it should be excluded.</returns>
     public static bool ShouldHardlink(string filePath)
     {
-        return ShouldHardlink(filePath, null, null);
+        return ShouldHardlink(filePath, null, null, null);
     }
 
     /// <summary>
@@ -57,6 +66,19 @@ public static class FileClassifier
     /// <param name="excludedDirectories">Custom list of directories to exclude. If null, uses defaults.</param>
     /// <returns>True if the file should be hardlinked; false if it should be excluded.</returns>
     public static bool ShouldHardlink(string filePath, IEnumerable<string>? excludedExtensions, IEnumerable<string>? excludedDirectories)
+    {
+        return ShouldHardlink(filePath, excludedExtensions, excludedDirectories, null);
+    }
+
+    /// <summary>
+    /// Determines whether a file should be hardlinked (included in the mirror).
+    /// </summary>
+    /// <param name="filePath">The full path to the file.</param>
+    /// <param name="excludedExtensions">Custom list of extensions to exclude. If null, uses defaults.</param>
+    /// <param name="excludedDirectories">Custom list of directories to exclude. If null, uses defaults.</param>
+    /// <param name="includedDirectories">Custom list of directories where all files are included regardless of extension. If null, uses defaults.</param>
+    /// <returns>True if the file should be hardlinked; false if it should be excluded.</returns>
+    public static bool ShouldHardlink(string filePath, IEnumerable<string>? excludedExtensions, IEnumerable<string>? excludedDirectories, IEnumerable<string>? includedDirectories)
     {
         if (string.IsNullOrEmpty(filePath))
         {
@@ -71,10 +93,21 @@ public static class FileClassifier
             ? new HashSet<string>(excludedExtensions, StringComparer.OrdinalIgnoreCase)
             : DefaultExcludedExtensions;
 
-        // Check if file is within an excluded directory
+        var includedDirs = includedDirectories != null
+            ? new HashSet<string>(includedDirectories, StringComparer.OrdinalIgnoreCase)
+            : DefaultIncludedDirectories;
+
+        // Check if file is within an excluded directory - always exclude these
         if (IsInExcludedDirectory(filePath, excludedDirs))
         {
             return false;
+        }
+
+        // Check if file is within an included directory - bypass extension exclusions
+        // These directories contain language-independent content (e.g., trickplay images, actor photos)
+        if (IsInIncludedDirectory(filePath, includedDirs))
+        {
+            return true;
         }
 
         var extension = Path.GetExtension(filePath);
@@ -124,6 +157,38 @@ public static class FileClassifier
     }
 
     /// <summary>
+    /// Determines whether a directory is an "included" directory where all files should be hardlinked.
+    /// Uses the default included directories.
+    /// </summary>
+    /// <param name="directoryPath">The full path to the directory.</param>
+    /// <returns>True if the directory is included; false otherwise.</returns>
+    public static bool IsIncludedDirectory(string directoryPath)
+    {
+        return IsIncludedDirectory(directoryPath, null);
+    }
+
+    /// <summary>
+    /// Determines whether a directory is an "included" directory where all files should be hardlinked.
+    /// </summary>
+    /// <param name="directoryPath">The full path to the directory.</param>
+    /// <param name="includedDirectories">Custom list of directories to include. If null, uses defaults.</param>
+    /// <returns>True if the directory is included; false otherwise.</returns>
+    public static bool IsIncludedDirectory(string directoryPath, IEnumerable<string>? includedDirectories)
+    {
+        if (string.IsNullOrEmpty(directoryPath))
+        {
+            return false;
+        }
+
+        var includedDirs = includedDirectories != null
+            ? new HashSet<string>(includedDirectories, StringComparer.OrdinalIgnoreCase)
+            : DefaultIncludedDirectories;
+
+        var dirName = Path.GetFileName(directoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return includedDirs.Contains(dirName);
+    }
+
+    /// <summary>
     /// Checks if the file path is within an excluded directory.
     /// </summary>
     private static bool IsInExcludedDirectory(string filePath, IReadOnlySet<string> excludedDirectories)
@@ -133,6 +198,26 @@ public static class FileClassifier
         {
             var dirName = Path.GetFileName(directory);
             if (excludedDirectories.Contains(dirName))
+            {
+                return true;
+            }
+
+            directory = Path.GetDirectoryName(directory);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if the file path is within an included directory.
+    /// </summary>
+    private static bool IsInIncludedDirectory(string filePath, IReadOnlySet<string> includedDirectories)
+    {
+        var directory = Path.GetDirectoryName(filePath);
+        while (!string.IsNullOrEmpty(directory))
+        {
+            var dirName = Path.GetFileName(directory);
+            if (includedDirectories.Contains(dirName))
             {
                 return true;
             }

@@ -14,6 +14,7 @@ public class PluginConfiguration : BasePluginConfiguration
 {
     private HashSet<string> _excludedExtensions = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _excludedDirectories = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _includedDirectories = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PluginConfiguration"/> class.
@@ -24,6 +25,7 @@ public class PluginConfiguration : BasePluginConfiguration
         UserLanguages = new List<UserLanguageConfig>();
         ExcludedExtensions = FileClassifier.DefaultExcludedExtensions;
         ExcludedDirectories = FileClassifier.DefaultExcludedDirectories;
+        IncludedDirectories = FileClassifier.DefaultIncludedDirectories;
     }
 
     /// <summary>
@@ -78,6 +80,17 @@ public class PluginConfiguration : BasePluginConfiguration
     }
 
     /// <summary>
+    /// Gets or sets the directory names where all files should be hardlinked regardless of extension.
+    /// These directories contain language-independent content (e.g., trickplay images, actor photos).
+    /// Values are normalized to lowercase and deduplicated.
+    /// </summary>
+    public HashSet<string> IncludedDirectories
+    {
+        get => _includedDirectories;
+        set => _includedDirectories = NormalizeToLowercaseSet(value);
+    }
+
+    /// <summary>
     /// Gets the default excluded file extensions (static, from FileClassifier).
     /// </summary>
     public static HashSet<string> DefaultExcludedExtensions => NormalizeToLowercaseSet(FileClassifier.DefaultExcludedExtensions);
@@ -86,6 +99,11 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets the default excluded directory names (static, from FileClassifier).
     /// </summary>
     public static HashSet<string> DefaultExcludedDirectories => NormalizeToLowercaseSet(FileClassifier.DefaultExcludedDirectories);
+
+    /// <summary>
+    /// Gets the default included directory names (static, from FileClassifier).
+    /// </summary>
+    public static HashSet<string> DefaultIncludedDirectories => NormalizeToLowercaseSet(FileClassifier.DefaultIncludedDirectories);
 
     /// <summary>
     /// Normalizes a collection of strings to a lowercase HashSet.

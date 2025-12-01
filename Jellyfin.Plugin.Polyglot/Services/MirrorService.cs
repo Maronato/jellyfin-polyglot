@@ -1101,9 +1101,10 @@ public class MirrorService : IMirrorService
         }
 
         // Use thread-safe reads
-        var (excludedExtensions, excludedDirectoryNames) = _configService.Read(c =>
+        var (excludedExtensions, excludedDirectoryNames, includedDirectoryNames) = _configService.Read(c =>
             (c.ExcludedExtensions.ToHashSet(StringComparer.OrdinalIgnoreCase),
-             c.ExcludedDirectories.ToHashSet(StringComparer.OrdinalIgnoreCase)));
+             c.ExcludedDirectories.ToHashSet(StringComparer.OrdinalIgnoreCase),
+             c.IncludedDirectories.ToHashSet(StringComparer.OrdinalIgnoreCase)));
 
         var excludedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var directory in Directory.EnumerateDirectories(path, "*", SearchOption.AllDirectories))
@@ -1132,7 +1133,7 @@ public class MirrorService : IMirrorService
                 }
             }
 
-            if (!isInExcludedDir && FileClassifier.ShouldHardlink(fileInfo.FullName, excludedExtensions, excludedDirectoryNames))
+            if (!isInExcludedDir && FileClassifier.ShouldHardlink(fileInfo.FullName, excludedExtensions, excludedDirectoryNames, includedDirectoryNames))
             {
                 yield return (fileInfo.FullName, new FileSignature(fileInfo.Length, fileInfo.LastWriteTimeUtc.Ticks));
             }
