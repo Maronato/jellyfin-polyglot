@@ -4,11 +4,6 @@
 
 **Multi-language metadata for Jellyfin.**
 
-> 🤖⚠️ **AI-Generated Notice** ⚠️🤖  
-> This repository was created entirely by AI.
->
-> The code is thoroughly tested and actively used on my main Jellyfin server. However, **please be aware of potential risks before installing**, and report any issues you encounter!
-
 Polyglot creates language-specific "mirror" libraries using filesystem hardlinks. Your media files stay exactly where they are, but each language gets its own library with native metadata. Users are then assigned to their preferred language and only see libraries in that language.
 
 ```
