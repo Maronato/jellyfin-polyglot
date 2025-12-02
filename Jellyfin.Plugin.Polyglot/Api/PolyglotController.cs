@@ -41,7 +41,9 @@ public class PolyglotController : ControllerBase
     private readonly IDebugReportService _debugReportService;
     private readonly IConfigurationService _configService;
     private readonly PolyglotUserManager _userManager;
-    private readonly ILocalizationManager _localizationManager;
+    // Stored as dynamic to avoid compile-time binding to specific method signatures
+    // that may change between Jellyfin versions (e.g., GetCultures, GetCountries)
+    private readonly dynamic _localizationManager;
     private readonly IServerConfigurationManager _serverConfigurationManager;
     private readonly ILogger<PolyglotController> _logger;
 
@@ -83,27 +85,9 @@ public class PolyglotController : ControllerBase
         var libraries = _mirrorService.GetJellyfinLibraries().ToList();
         var users = _userLanguageService.GetAllUsersWithLanguages().ToList();
 
-        var cultures = _localizationManager.GetCultures()
-            .OrderBy(c => c.DisplayName)
-            .Select(c => new CultureInfo
-            {
-                DisplayName = c.DisplayName,
-                Name = c.Name,
-                TwoLetterISOLanguageName = c.TwoLetterISOLanguageName,
-                ThreeLetterISOLanguageName = c.ThreeLetterISOLanguageName
-            })
-            .ToList();
-
-        var countries = _localizationManager.GetCountries()
-            .OrderBy(c => c.DisplayName)
-            .Select(c => new CountryInfo
-            {
-                DisplayName = c.DisplayName,
-                Name = c.Name,
-                TwoLetterISORegionName = c.TwoLetterISORegionName,
-                ThreeLetterISORegionName = c.ThreeLetterISORegionName
-            })
-            .ToList();
+        // Use dynamic to avoid compile-time binding issues with API changes between Jellyfin versions
+        var cultures = GetCulturesCompat();
+        var countries = GetCountriesCompat();
 
         var serverConfig = _serverConfigurationManager.Configuration;
 
@@ -875,6 +859,66 @@ public class PolyglotController : ControllerBase
     {
         var dashIndex = code.IndexOf('-');
         return dashIndex > 0 ? code.Substring(dashIndex + 1) : string.Empty;
+    }
+
+    /// <summary>
+    /// Gets cultures from ILocalizationManager using dynamic dispatch to handle API changes.
+    /// </summary>
+    private List<CultureInfo> GetCulturesCompat()
+    {
+        var result = new List<CultureInfo>();
+        try
+        {
+            // Use dynamic to handle different return types across Jellyfin versions
+            foreach (dynamic culture in _localizationManager.GetCultures())
+            {
+                result.Add(new CultureInfo
+                {
+                    DisplayName = (string)culture.DisplayName,
+                    Name = (string)culture.Name,
+                    TwoLetterISOLanguageName = (string)culture.TwoLetterISOLanguageName,
+                    ThreeLetterISOLanguageName = (string)culture.ThreeLetterISOLanguageName
+                });
+            }
+
+            result.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.Ordinal));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get cultures from localization manager");
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Gets countries from ILocalizationManager using dynamic dispatch to handle API changes.
+    /// </summary>
+    private List<CountryInfo> GetCountriesCompat()
+    {
+        var result = new List<CountryInfo>();
+        try
+        {
+            // Use dynamic to handle different return types across Jellyfin versions
+            foreach (dynamic country in _localizationManager.GetCountries())
+            {
+                result.Add(new CountryInfo
+                {
+                    DisplayName = (string)country.DisplayName,
+                    Name = (string)country.Name,
+                    TwoLetterISORegionName = (string)country.TwoLetterISORegionName,
+                    ThreeLetterISORegionName = (string)country.ThreeLetterISORegionName
+                });
+            }
+
+            result.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.Ordinal));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get countries from localization manager");
+        }
+
+        return result;
     }
 
     #endregion
