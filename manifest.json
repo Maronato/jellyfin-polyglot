@@ -10,6 +10,14 @@
     "repositoryUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot",
     "versions": [
       {
+        "version": "0.9.4.0",
+        "changelog": "## What's Changed\n\n### 🔧 Improvements\n- Replace UserCreatedConsumer and UserDeletedConsumer with dynamic event handling\n  - Introduced UserEventHandlers to manage user creation and deletion events using reflection for cross-version compatibility\n  - Implemented DynamicEventConsumer for dynamic registration of event consumers, avoiding compile-time dependencies on Jellyfin's user event args\n  - Streamlined event handling architecture\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.9.3...v0.9.4",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot/releases/download/v0.9.4/polyglot_0.9.4.0.zip",
+        "checksum": "0de20a20b9e2fd488380547dc37b09da",
+        "timestamp": "2025-12-02T06:07:08Z"
+      },
+      {
         "version": "0.9.3.0",
         "changelog": "## What's Changed\n\n### 🔧 Improvements\n- Introduce PolyglotUser wrapper for cross-version compatibility\n  - Added a new PolyglotUser class to provide a version-agnostic interface for Jellyfin's User entity\n  - Accommodates changes in user entity namespaces and enum migrations across Jellyfin versions\n  - Enhanced permission and preference management with PolyglotPermissionKind and PolyglotPreferenceKind constants\n- Redesigned advanced settings UI in configuration page\n  - Introduced a card layout for better usability\n  - Updated styles for visual clarity and interaction\n  - Replaced button with intuitive header including collapse arrow for expanded/collapsed states\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.9.2...v0.9.3",
         "targetAbi": "10.10.0.0",
