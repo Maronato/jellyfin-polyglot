@@ -10,6 +10,14 @@
     "repositoryUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot",
     "versions": [
       {
+        "version": "0.9.5.0",
+        "changelog": "## What's Changed\n\n### 🔧 Improvements\n- Introduce PolyglotUserManager for version-agnostic user management\n  - Replaced IUserManager with PolyglotUserManager in multiple services for consistent interface across Jellyfin versions\n  - Updated DebugReportService, LibraryAccessService, and UserLanguageService to utilize the new manager\n  - Removed unnecessary reflection-based user conversions, streamlining user handling\n- Update localization handling for version compatibility\n  - Changed localization manager to dynamic to avoid compile-time binding issues\n  - Introduced GetCulturesCompat and GetCountriesCompat methods for dynamic retrieval across Jellyfin versions\n  - Added error handling and logging for potential failures\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.9.4...v0.9.5",
+        "targetAbi": "10.10.0.0",
+        "sourceUrl": "https://github.com/Maronato/jellyfin-plugin-polyglot/releases/download/v0.9.5/polyglot_0.9.5.0.zip",
+        "checksum": "ae77979bb3c6ddd5194306228e847f10",
+        "timestamp": "2025-12-02T06:55:29Z"
+      },
+      {
         "version": "0.9.4.0",
         "changelog": "## What's Changed\n\n### 🔧 Improvements\n- Replace UserCreatedConsumer and UserDeletedConsumer with dynamic event handling\n  - Introduced UserEventHandlers to manage user creation and deletion events using reflection for cross-version compatibility\n  - Implemented DynamicEventConsumer for dynamic registration of event consumers, avoiding compile-time dependencies on Jellyfin's user event args\n  - Streamlined event handling architecture\n\n**Full Changelog**: https://github.com/Maronato/jellyfin-plugin-polyglot/compare/v0.9.3...v0.9.4",
         "targetAbi": "10.10.0.0",
